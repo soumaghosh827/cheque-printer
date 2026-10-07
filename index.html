@@ -1,0 +1,2906 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enterprise Internal Cheque Printing Utility</title>
+    <!-- Tailwind CSS for UI controls styling -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- React and ReactDOM from CDN -->
+    <script
+      src="https://unpkg.com/react@18/umd/react.development.js"
+      crossorigin
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"
+      crossorigin
+    ></script>
+    <!-- Babel for inline JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/lucide@1.49.0"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+
+    <style>
+      /* Global CSS Rules */
+      body {
+        background-color: #f3f4f6;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* SCREEN PREVIEW CONTEXT ONLY */
+      @media screen {
+        html,
+        body,
+        #root {
+          height: 100vh !important;
+          overflow: hidden !important;
+        }
+        :root {
+          /* Scale factor: 0.60 fits standard laptops nicely without overflow */
+          --cheque-scale: 0.6;
+        }
+        /* Automatically make it slightly larger on huge desktop monitors */
+        @media (min-width: 1536px) {
+          :root {
+            --cheque-scale: 0.75;
+          }
+        }
+
+        .a4-screen-wrapper {
+          background: #ffffff;
+          box-shadow:
+            0 10px 25px -5px rgba(0, 0, 0, 0.1),
+            0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          border: 1px dashed #d1d5db;
+
+          /* Lock the screen width to a predictable relative viewport width */
+          width: 50vw !important;
+          /* Force the height to calculate strictly off the A4 mathematical constant */
+          aspect-ratio: 297 / 210 !important;
+          height: auto !important;
+
+          /* Prevent flex containers from compressing or expanding this box */
+          flex-shrink: 0 !important;
+          flex-grow: 0 !important;
+
+          position: relative !important;
+          display: flex !important;
+          flex-direction: row !important;
+          justify-content: flex-end !important;
+          align-items: center !important;
+          box-sizing: border-box !important;
+        }
+
+        .cheque-canvas-screen {
+          width: calc(210mm * (50vw / 297mm)) !important;
+          height: calc(96.2mm * (50vw / 297mm)) !important;
+          position: relative !important;
+          box-sizing: border-box !important;
+          /* Lock aspect ratio of the cheque body inside the A4 paper */
+          aspect-ratio: 203 / 89 !important;
+        }
+
+        /* Target the new inner layout wrapper to translate measurements down dynamically */
+        .cheque-canvas-screen .global-offset-wrapper {
+          width: 210mm !important;
+          height: 96.2mm !important;
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          transform-origin: top left !important;
+          /* Maps absolute mm coordinates to your viewport scale seamlessly */
+          /* transform: scale(calc(50vw / 297mm)) !important; */
+        }
+
+        .no-print {
+          opacity: 1;
+        }
+        .print-only {
+          display: none !important;
+        }
+
+        /* High-fidelity corporate theme scrollbar customization */
+        .custom-sidebar-scroll {
+          /* Standard cross-browser W3C baseline controls */
+          scrollbar-width: thin !important;
+          scrollbar-color: #334155 #020617 !important; /* Thumb: slate-700, Track: slate-950 */
+        }
+
+        /* Modern Webkit layout engine specifications (Chrome, Safari, Edge) */
+        .custom-sidebar-scroll::-webkit-scrollbar {
+          width: 6px !important; /* Slim low-profile width footprint */
+          height: 6px !important;
+        }
+
+        .custom-sidebar-scroll::-webkit-scrollbar-track {
+          background: #020617 !important; /* Match slate-950 panel baseline background */
+          border-radius: 0px !important;
+        }
+
+        .custom-sidebar-scroll::-webkit-scrollbar-thumb {
+          background: #334155 !important; /* Match slate-700 interface lines */
+          border-radius: 9999px !important; /* High-rounded capsule aesthetic */
+          border: 1px solid #020617 !important; /* Adds clear separation spacing buffer */
+        }
+
+        .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+          background: #475569 !important; /* Glow accent highlights to slate-600 on active hover interaction paths */
+        }
+
+        /* Turns the native browser button invisible but keeps its click hitbox fully functional */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          position: absolute !important;
+          top: 0 !important;
+          right: 0 !important;
+          width: 2.5rem !important;
+          height: 100% !important;
+          opacity: 0 !important; /* Completely transparent */
+          cursor: pointer !important;
+          z-index: 10 !important; /* Sits on top to capture all cursor clicks */
+        }
+      }
+
+      /* CRITICAL: MASTER PRINT SPECIFICATION SHEET FOR A4 LANDSCAPE */
+      @media print {
+        @page {
+          size: A4 landscape;
+          margin: 0mm !important; /* Forces removal of browser headers/footers */
+        }
+
+        html,
+        body {
+          width: 297mm !important;
+          height: 210mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background-color: #ffffff !important;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+
+        .print-only {
+          display: flex !important;
+        }
+
+        /* Absolute alignment architecture for physical hardware limits */
+        .printer-viewport-a4 {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 297mm !important;
+          height: 210mm !important;
+          display: flex !important;
+          flex-direction: row !important;
+          justify-content: flex-end !important; /* Forces cheque flush right */
+          align-items: center !important; /* Forces cheque perfectly in vertical center */
+          background: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-sizing: border-box !important;
+        }
+
+        /* Physical bounding target area of the CTS-2010 Cheque */
+        .cheque-canvas-print {
+          width: 203mm !important;
+          height: 89mm !important;
+          position: relative !important;
+          background-image: none !important; /* Suppresses background check image during printing */
+          background-color: transparent !important;
+          box-shadow: none !important;
+          border: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          page-break-inside: avoid !important;
+          overflow: visible !important;
+          box-sizing: border-box !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+
+      const BANK_KEYS = ["sbi", "axis", "hdfc", "icici", "indusind"];
+
+      // Default Layout Configuration Baselines (Values optimized in Millimeters)
+      const DEFAULT_PRESETS = {
+        sbi: {
+          id: "sbi",
+          name: "State Bank of India (Standard CTS-2010)",
+          bgUrl:
+            "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=20",
+          fields: {
+            acPayee: {
+              top: 1.4,
+              left: -25,
+              width: 40.0,
+              fontSize: 2,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0.4,
+              angle: -45,
+            },
+            payee: {
+              top: 17.5,
+              left: 5,
+              line2Left: 5,
+              lineGap: 4,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountWords: {
+              top: 26,
+              left: 20,
+              line2Left: 0,
+              lineGap: 9.5,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountNumeric: {
+              top: 33,
+              left: 151,
+              fontSize: 4,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            date: {
+              top: 3.5,
+              left: 149,
+              fontSize: 3.6,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 3.4,
+            },
+            all: { fontFamily: "Arial" },
+          },
+        },
+        axis: {
+          id: "axis",
+          name: "Axis Bank (Standard CTS-2010)",
+          bgUrl:
+            "https://images.unsplash.com/photo-1618005174411-a83a8bd57fbe?auto=format&fit=crop&w=800&q=20",
+          fields: {
+            acPayee: {
+              top: -3.4,
+              left: -21,
+              width: 40.0,
+              fontSize: 2,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0.4,
+              angle: -45,
+            },
+            payee: {
+              top: 17.5,
+              left: 5,
+              line2Left: 5,
+              lineGap: 4,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountWords: {
+              top: 26,
+              left: 20,
+              line2Left: 0,
+              lineGap: 9.5,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountNumeric: {
+              top: 34,
+              left: 156,
+              fontSize: 4,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            date: {
+              top: 2.5,
+              left: 149,
+              fontSize: 3.6,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 3.3,
+            },
+            all: { fontFamily: "Arial" },
+          },
+        },
+        hdfc: {
+          id: "hdfc",
+          name: "HDFC Bank Ltd (Standard CTS-2010)",
+          bgUrl: "https://example.com",
+          fields: {
+            acPayee: {
+              top: -3.4,
+              left: -21,
+              width: 40.0,
+              fontSize: 2,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0.4,
+              angle: -45,
+            },
+            payee: {
+              top: 17.5,
+              left: 5,
+              line2Left: 5,
+              lineGap: 4,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountWords: {
+              top: 26,
+              left: 20,
+              line2Left: 0,
+              lineGap: 9.5,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountNumeric: {
+              top: 34,
+              left: 156,
+              fontSize: 4,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            date: {
+              top: 2.5,
+              left: 149,
+              fontSize: 3.6,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 3.3,
+            },
+            all: { fontFamily: "Arial" },
+          },
+        },
+        icici: {
+          id: "icici",
+          name: "ICICI Bank Ltd (Standard CTS-2010)",
+          bgUrl: "https://example.com",
+          fields: {
+            acPayee: {
+              top: -3.4,
+              left: -21,
+              width: 40.0,
+              fontSize: 2,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0.4,
+              angle: -45,
+            },
+            payee: {
+              top: 17.5,
+              left: 5,
+              line2Left: 5,
+              lineGap: 4,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountWords: {
+              top: 26,
+              left: 20,
+              line2Left: 0,
+              lineGap: 9.5,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountNumeric: {
+              top: 34,
+              left: 156,
+              fontSize: 4,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            date: {
+              top: 2.5,
+              left: 149,
+              fontSize: 3.6,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 3.3,
+            },
+            all: { fontFamily: "Arial" },
+          },
+        },
+        indusind: {
+          id: "indusind",
+          name: "IndusInd Bank (Standard CTS-2010)",
+          bgUrl: "https://example.com",
+          fields: {
+            acPayee: {
+              top: -3.4,
+              left: -21,
+              width: 40.0,
+              fontSize: 2,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0.4,
+              angle: -45,
+            },
+            payee: {
+              top: 17.5,
+              left: 5,
+              line2Left: 5,
+              lineGap: 4,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountWords: {
+              top: 26,
+              left: 20,
+              line2Left: 0,
+              lineGap: 9.5,
+              fontSize: 3.5,
+              fontFamily: "Arial",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            amountNumeric: {
+              top: 34,
+              left: 156,
+              fontSize: 4,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 0,
+            },
+            date: {
+              top: 2.5,
+              left: 149,
+              fontSize: 3.6,
+              fontFamily: "Consolas",
+              fontWeight: "normal",
+              letterSpacing: 3.3,
+            },
+            all: { fontFamily: "Arial" },
+          },
+        },
+      };
+
+      // Master Application Configs
+      const DEFAULT_ZOOM_FACTOR = 1.4;
+
+      // Utility: Indian Numbering System Converter (Scales to Crores)
+      function convertAmountToIndianWords(amount) {
+        if (!amount || isNaN(amount)) return "";
+        const [rupeeStr, paiseStr = ""] = String(amount).split(".");
+        const num = parseInt(rupeeStr, 10) || 0;
+        // ".5" means 50 paise, so pad the typed decimals to two digits
+        const paise = parseInt((paiseStr + "00").slice(0, 2), 10) || 0;
+        if (num === 0 && paise === 0) return "Zero Rupees Only";
+
+        const a = [
+          "",
+          "One ",
+          "Two ",
+          "Three ",
+          "Four ",
+          "Five ",
+          "Six ",
+          "Seven ",
+          "Eight ",
+          "Nine ",
+          "Ten ",
+          "Eleven ",
+          "Twelve ",
+          "Thirteen ",
+          "Fourteen ",
+          "Fifteen ",
+          "Sixteen ",
+          "Seventeen ",
+          "Eighteen ",
+          "Nineteen ",
+        ];
+        const b = [
+          "",
+          "",
+          "Twenty",
+          "Thirty",
+          "Forty",
+          "Fifty",
+          "Sixty",
+          "Seventy",
+          "Eighty",
+          "Ninety",
+        ];
+
+        function numToWords(n, suffix) {
+          let str = "";
+          if (n >= 10000000) {
+            str += numToWords(Math.floor(n / 10000000), "Crore ");
+            str += numToWords(n % 10000000, "");
+          } else if (n >= 100000) {
+            str += numToWords(Math.floor(n / 100000), "Lakh ");
+            str += numToWords(n % 100000, "");
+          } else if (n >= 1000) {
+            str += numToWords(Math.floor(n / 1000), "Thousand ");
+            str += numToWords(n % 1000, "");
+          } else if (n >= 100) {
+            str += a[Math.floor(n / 100)] + "Hundred ";
+            if (n % 100 > 0) str += "and ";
+            str += numToWords(n % 100, "");
+          } else if (n > 19) {
+            str += b[Math.floor(n / 10)] + " " + a[n % 10];
+          } else {
+            str += a[n];
+          }
+          if (str.trim() && suffix) str += suffix;
+          return str;
+        }
+
+        let words = "";
+        words += numToWords(Math.floor(num / 10000000), "Crore ");
+        words += numToWords(Math.floor((num / 100000) % 100), "Lakh ");
+        words += numToWords(Math.floor((num / 1000) % 100), "Thousand ");
+        words += numToWords(Math.floor((num / 100) % 10), "Hundred ");
+
+        if (num > 100 && num % 100 > 0) words += "and ";
+        words += numToWords(num % 100, "");
+
+        const paiseWords = paise > 0 ? numToWords(paise, "").trim() : "";
+        let result;
+        if (num === 0) {
+          result = `${paiseWords} Paise Only`;
+        } else {
+          result = `${words.trim()} Rupees${paiseWords ? ` and ${paiseWords} Paise` : ""} Only`;
+        }
+        return result.replace(/\s+/g, " ");
+      }
+
+      // Utility: Wrap text into at most two lines, breaking at the last space before the limit
+      function wrapTextToTwoLines(text, maxCharsLine1 = 70) {
+        if (text.length <= maxCharsLine1) return { line1: text, line2: "" };
+        let lastSpace = text.lastIndexOf(" ", maxCharsLine1);
+        if (lastSpace === -1) lastSpace = maxCharsLine1;
+        return {
+          line1: text.substring(0, lastSpace).trim(),
+          line2: text.substring(lastSpace).trim(),
+        };
+      }
+
+      // Utility: Add the "**" security markers (start of line 1, end of the last line)
+      function addSecurityMarkers({ line1, line2 }) {
+        if (!line1 && !line2) return { line1: "", line2: "" };
+        return line2
+          ? { line1: `**${line1}`, line2: `${line2}**` }
+          : { line1: `**${line1}**`, line2: "" };
+      }
+
+      // Utility: format the raw amount ("1234.5") for the input box, keeping the typed decimal part
+      function formatAmountInput(raw) {
+        if (!raw) return "";
+        const [intPart, decPart] = raw.split(".");
+        const intText = Number(intPart || 0).toLocaleString("en-IN");
+        return raw.includes(".") ? `${intText}.${decPart}` : intText;
+      }
+
+      // Utility: numeric amount as printed on the cheque, e.g. "**1,23,456.50**" (always 2 decimals)
+      function formatChequeAmount(raw) {
+        if (!raw || isNaN(raw)) return "";
+        const text = Number(raw).toLocaleString("en-IN", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return `**${text}**`;
+      }
+
+      // Reusable renderer: draws a wrapped field (line 1 + optional line 2) from its field config
+      function WrappedFieldLines({
+        config,
+        lines,
+        color,
+        preview,
+        active,
+        onClick,
+        placeholder,
+      }) {
+        const rows = [
+          {
+            text: lines.line1,
+            top: Number(config.top),
+            left: Number(config.left),
+          },
+          {
+            text: lines.line2,
+            top: Number(config.top) + Number(config.lineGap || 0),
+            left: Number(config.line2Left ?? config.left),
+          },
+        ];
+        return (
+          <React.Fragment>
+            {rows.map((row, i) => {
+              const showPlaceholder =
+                preview && i === 0 && !lines.line1 && !lines.line2;
+              if (!row.text && !showPlaceholder) return null;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    top: `${row.top}mm`,
+                    left: `${row.left}mm`,
+                    fontSize: `${config.fontSize}mm`,
+                    fontFamily: config.fontFamily,
+                    fontWeight: config.fontWeight || "normal",
+                    lineHeight: 1,
+                    whiteSpace: "nowrap",
+                    color,
+                  }}
+                  className={
+                    preview
+                      ? `cursor-pointer p-0.5 rounded transition ${active ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`
+                      : undefined
+                  }
+                  onClick={preview ? onClick : undefined}
+                >
+                  {row.text || placeholder}
+                </div>
+              );
+            })}
+          </React.Fragment>
+        );
+      }
+
+      // Reusable wrap-limit control: label, live value badge, -/+ buttons and slider
+      function WrapLimitControl({
+        label,
+        value,
+        onChange,
+        min,
+        max,
+        disabled,
+      }) {
+        return (
+          <div className="pt-2 border-t border-slate-900 space-y-1.5">
+            <div className="flex justify-between items-center text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+              <span className="flex items-center gap-1">
+                <i
+                  data-lucide="text-cursor-input"
+                  className="w-3.5 h-3.5 text-slate-500"
+                ></i>
+                {label}
+              </span>
+              <span className="text-blue-400 font-bold font-sans text-xs bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                {value} Chars
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={disabled || value <= min}
+                onClick={() => onChange(Math.max(min, value - 1))}
+                className="w-8 h-8 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center text-slate-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed select-none cursor-pointer"
+              >
+                <span className="text-sm font-bold">-</span>
+              </button>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step="1"
+                value={value}
+                onChange={(e) => onChange(parseInt(e.target.value, 10))}
+                disabled={disabled}
+                className="flex-1 h-1.5 bg-slate-950 border border-slate-900 rounded-lg appearance-none cursor-pointer accent-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+              <button
+                type="button"
+                disabled={disabled || value >= max}
+                onClick={() => onChange(Math.min(max, value + 1))}
+                className="w-8 h-8 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center text-slate-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed select-none cursor-pointer"
+              >
+                <span className="text-sm font-bold">+</span>
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Reusable number input: type freely (empty, "-", ".", "-0.5"), tidy up on blur, ↑/↓ keys step
+      function NumberField({ value, onChange, step = 1, min, max, ...rest }) {
+        const [text, setText] = React.useState(String(value ?? ""));
+        const [focused, setFocused] = React.useState(false);
+
+        // Keep the box in sync with outside changes (e.g. switching fields) while not typing
+        React.useEffect(() => {
+          if (!focused) setText(String(value ?? ""));
+        }, [value, focused]);
+
+        const clamp = (n) => {
+          if (min !== undefined && n < Number(min)) n = Number(min);
+          if (max !== undefined && n > Number(max)) n = Number(max);
+          return n;
+        };
+        const emit = (t) => onChange({ target: { value: t } });
+
+        return (
+          <input
+            {...rest}
+            type="text"
+            inputMode="decimal"
+            value={text}
+            onFocus={(e) => {
+              setFocused(true);
+              e.target.select(); // typing replaces the old value, so a leftover 0 never gets in the way
+            }}
+            onBlur={() => {
+              setFocused(false);
+              const n = clamp(parseFloat(text) || 0);
+              setText(String(n));
+              emit(String(n));
+            }}
+            onChange={(e) => {
+              const t = e.target.value;
+              if (/^-?\d*\.?\d*$/.test(t)) {
+                setText(t);
+                emit(t);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                e.preventDefault();
+                const dir = e.key === "ArrowUp" ? 1 : -1;
+                const n = clamp(
+                  Math.round(
+                    ((parseFloat(text) || 0) + dir * Number(step)) * 1000,
+                  ) / 1000,
+                );
+                setText(String(n));
+                emit(String(n));
+              }
+            }}
+          />
+        );
+      }
+
+      function App() {
+        // STATES START HERE --------------------------------------------------------------
+
+        // Document States
+        const [selectedBank, setSelectedBank] = useState("axis");
+        const [payeeName, setPayeeName] = useState("John Doe");
+        const [amount, setAmount] = useState("456789957");
+        const [chequeDate, setChequeDate] = useState(
+          new Date().toISOString().split("T")[0],
+        ); // Target standard YYYY-MM-DD format
+
+        // console.log("Date -> ", new Date().toISOString().split("T")[0]);
+
+        // Configuration Layout Positioning Matrices
+        const [fields, setFields] = useState(DEFAULT_PRESETS.axis.fields);
+        const [activeFieldKey, setActiveFieldKey] = useState("payee");
+
+        const [printHistory, setPrintHistory] = useState(
+          () => JSON.parse(localStorage.getItem("cheque_print_history")) || [],
+        );
+
+        // Global shift offset matrix for multi-element configuration tracking
+        const [globalOffset, setGlobalOffset] = useState({ top: 0, left: 0 });
+
+        // Manual Hardware Print Verification States
+        const [pendingLogEntry, setPendingLogEntry] = useState(null);
+        const [showVerifyToast, setShowVerifyToast] = useState(false);
+        const [isRespooling, setIsRespooling] = useState(false);
+
+        // Dynamic Word Wrap Threshold States (Range: 20 to 100 characters)
+        const [maxLine1Chars, setMaxLine1Chars] = useState(100);
+        const [maxPayeeLine1Chars, setMaxPayeeLine1Chars] = useState(60);
+
+        // Workspace Interactive Zoom State (Range: 0.8 to 2.0)
+        const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
+
+        // Interactive Viewport Pan/Drag States
+        const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+        const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
+        const [dragStartPoint, setDragStartPoint] = useState({ x: 0, y: 0 });
+
+        // Keep track of the live encryption key securely in application runtime memory
+        const [encryptionKey, setEncryptionKey] = useState("");
+
+        // User Login Modal State Controllers
+        const [isDashboardLocked, setIsDashboardLocked] = useState(true);
+        const [authPasswordInput, setAuthPasswordInput] = useState("");
+        const [authErrorMessage, setAuthErrorMessage] = useState("");
+        const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
+        const [hasQuarantinedLogs, setHasQuarantinedLogs] = useState(false);
+
+        // Archive Vault Tracking States
+        const [quarantinedLogList, setQuarantinedLogList] = useState([]);
+        const [selectedArchiveKey, setSelectedArchiveKey] = useState("");
+        const [archivePasswordInput, setArchivePasswordInput] = useState("");
+        const [archiveRecoveryError, setArchiveRecoveryError] = useState("");
+
+        // Toast Notification Stack State Tracker
+        const [toasts, setToasts] = useState([]);
+
+        // STATES END HERE --------------------------------------------------------------
+
+        // EFFECTS START HERE --------------------------------------------------------------
+
+        // Guarantees workspace remains clean and unblurred upon initial browser tab boot
+        useEffect(() => {
+          setPendingLogEntry(null);
+          setShowVerifyToast(false);
+          setIsRespooling(false);
+          console.log(
+            "Print safety audit matrix initialized. Workspace unlocked.",
+          );
+        }, []);
+
+        // Read LocalStorage configurations on startup
+        useEffect(() => {
+          const stored = localStorage.getItem(`cheque_preset_sbi`);
+          if (stored) setFields(JSON.parse(stored));
+        }, []);
+
+        // Lock down window execution loops if a hardware verification prompt is active
+        useEffect(() => {
+          const handleBeforeUnloadGuard = (event) => {
+            if (showVerifyToast && pendingLogEntry) {
+              // Modern browsers require setting the event payload value string to trigger native alerts
+              event.preventDefault();
+              event.returnValue =
+                "A cheque print verification is currently pending. Leaving now will drop this transaction from the audit ledger.";
+              return event.returnValue;
+            }
+          };
+
+          window.addEventListener("beforeunload", handleBeforeUnloadGuard);
+          return () => {
+            window.removeEventListener("beforeunload", handleBeforeUnloadGuard);
+          };
+        }, [showVerifyToast, pendingLogEntry]);
+
+        // Continuous Lucide Icon DOM Rendering Engine
+        useEffect(() => {
+          if (window.lucide) {
+            window.lucide.createIcons();
+          }
+        }, [
+          selectedBank,
+          showVerifyToast,
+          printHistory,
+          activeFieldKey,
+          fields,
+          isDashboardLocked,
+          isFirstTimeSetup,
+          authErrorMessage,
+          hasQuarantinedLogs,
+          quarantinedLogList,
+          selectedArchiveKey,
+          archiveRecoveryError,
+          toasts,
+        ]); // Re-scans dynamically when tabs or overlays change state
+
+        // Background Database Initialization and Storage Audit Engine
+        useEffect(() => {
+          const auditSystemStorage = () => {
+            const cipherText = localStorage.getItem(
+              "cheque_print_history_encrypted",
+            );
+
+            // 1. Scan storage indices for any historical quarantined archive logs keys
+            let archivedLogsExist = false;
+            for (let i = 0; i < localStorage.length; i++) {
+              const storageKey = localStorage.key(i);
+              if (
+                storageKey &&
+                storageKey.startsWith("cheque_print_history_quarantined_")
+              ) {
+                archivedLogsExist = true;
+                break;
+              }
+            }
+            setHasQuarantinedLogs(archivedLogsExist);
+
+            // 2. Evaluate active database footprints to assign interface modal routing modes
+            if (!cipherText) {
+              // No encrypted active ledger database found on this machine -> Route to Setup Mode
+              setIsFirstTimeSetup(true);
+              setIsDashboardLocked(true);
+              console.log(
+                "No active log database detected. Shifting to First-Time Configuration Mode.",
+              );
+            } else {
+              // Encrypted transaction history detected -> Route to Locked Unlock Mode
+              setIsFirstTimeSetup(false);
+              setIsDashboardLocked(true);
+              console.log(
+                "Active encrypted database detected. Securing workspace workspace layout.",
+              );
+            }
+          };
+
+          auditSystemStorage();
+        }, []);
+
+        // Hook into startup loops to run scanning triggers immediately after a successful login authentication loop
+        useEffect(() => {
+          if (!isDashboardLocked) {
+            scanForQuarantinedLogs();
+          }
+        }, [isDashboardLocked]);
+
+        // EFFECTS END HERE --------------------------------------------------------------
+
+        // DOM Input Section Reference Anchors for Automated Scrolling
+        const payeeRef = React.useRef(null);
+        const amountRef = React.useRef(null);
+        const dateRef = React.useRef(null);
+        const settingsRef = React.useRef(null);
+
+        // Unified Custom-Themed UI Authentication Processing Engine
+        const handleAuthSubmit = () => {
+          // Clear any existing validation alert strings
+          setAuthErrorMessage("");
+
+          const trimmedInput = authPasswordInput.trim();
+
+          // 1. Enforce strict character parameters baseline checks
+          if (trimmedInput.length < 4) {
+            setAuthErrorMessage(
+              "Password must contain at least 4 characters (excluding spaces).",
+            );
+            return;
+          }
+
+          // 2. FIRST-TIME SETUP PATHWAY
+          if (isFirstTimeSetup) {
+            setEncryptionKey(trimmedInput);
+            setPrintHistory([]);
+            setIsDashboardLocked(false);
+            setAuthPasswordInput("");
+            showToast("Password set successfully.", "success");
+            console.log("Master security password successfully configured.");
+            return;
+          }
+
+          // 3. RETURNING UNLOCK VERIFICATION PATHWAY
+          const cipherText = localStorage.getItem(
+            "cheque_print_history_encrypted",
+          );
+          if (!cipherText) return;
+
+          try {
+            const bytes = CryptoJS.AES.decrypt(cipherText, trimmedInput);
+            const decryptedData = bytes.toString(CryptoJS.enc.Utf8);
+
+            // Validate the decrypted data fingerprint signature integrity checks
+            if (
+              !decryptedData ||
+              decryptedData.trim() === "" ||
+              decryptedData.charAt(0) !== "["
+            ) {
+              throw new Error("Validation mismatch");
+            }
+
+            setEncryptionKey(trimmedInput);
+            setPrintHistory(JSON.parse(decryptedData));
+            setIsDashboardLocked(false);
+            setAuthPasswordInput("");
+            console.log("Security clearance validated. History mounted.");
+          } catch (error) {
+            // Inject wrong password error message which implicitly flags the reset alternative button
+            setAuthErrorMessage(
+              "Incorrect password! Enter your password again or choose to proceed with a new password below.",
+            );
+          }
+        };
+
+        // Graceful Alternative Reset & Quarantine Isolation Routine
+        const handleQuarantineAndReset = () => {
+          const cipherText = localStorage.getItem(
+            "cheque_print_history_encrypted",
+          );
+
+          if (cipherText) {
+            // Generate isolated file timestamp key parameters mapping standard ISO dates
+            const currentDateStamp = new Date().toISOString().split("T")[0];
+            const uniqueUnixTime = new Date().getTime();
+            const quarantineStorageKey = `cheque_print_history_quarantined_${currentDateStamp}_${uniqueUnixTime}`;
+
+            // Quarantine the old encrypted logs ciphertext aside safely inside local storage cluster
+            localStorage.setItem(quarantineStorageKey, cipherText);
+            localStorage.removeItem("cheque_print_history_encrypted");
+          }
+
+          // Clear tracking memory arrays and shift interface context to factory setup rules parameters
+          setPrintHistory([]);
+          setEncryptionKey("");
+          setAuthPasswordInput("");
+          setAuthErrorMessage("");
+          setIsFirstTimeSetup(true);
+          setHasQuarantinedLogs(true);
+
+          showToast(
+            "Previous log data has been archived. Please use a new password to secure future logs.",
+            "success",
+          );
+        };
+
+        // Scan browser cache cluster to index and compile a sorted array list of all quarantined logs
+        const scanForQuarantinedLogs = () => {
+          const archives = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith("cheque_print_history_quarantined_")) {
+              // Extract structural timestamps out of the file key name string tokens
+              const keyParts = key.split("_");
+              const epochMs = parseInt(keyParts[keyParts.length - 1], 10) || 0;
+              const cleanLabel =
+                new Date(epochMs).toLocaleString("en-IN") ||
+                "Archived Backup Log";
+
+              archives.push({ key, epochMs, label: cleanLabel });
+            }
+          }
+
+          // Sort chronologically (Most recent logs sit on top at index 0)
+          archives.sort((a, b) => b.epochMs - a.epochMs);
+
+          setQuarantinedLogList(archives);
+          setHasQuarantinedLogs(archives.length > 0);
+
+          // Default focus maps instantly to the most recent log file if present
+          if (archives.length > 0 && !selectedArchiveKey) {
+            setSelectedArchiveKey(archives[0].key);
+          }
+        };
+
+        // Decrypt specific isolated string records and stream directly as styled spreadsheet
+        const handleRecoverArchiveToExcel = () => {
+          setArchiveRecoveryError("");
+
+          if (!selectedArchiveKey) return;
+          const cipherText = localStorage.getItem(selectedArchiveKey);
+          if (!cipherText) return;
+
+          const trimmedKey = archivePasswordInput.trim();
+          if (!trimmedKey) {
+            setArchiveRecoveryError(
+              "Please enter the password used for this specific log.",
+            );
+            return;
+          }
+
+          try {
+            const bytes = CryptoJS.AES.decrypt(cipherText, trimmedKey);
+            const decryptedData = bytes.toString(CryptoJS.enc.Utf8);
+
+            // Form validation fingerprint check to determine text validity strings keys
+            if (
+              !decryptedData ||
+              decryptedData.trim() === "" ||
+              decryptedData.charAt(0) !== "["
+            ) {
+              throw new Error("Validation mismatch");
+            }
+
+            const parsedHistory = JSON.parse(decryptedData);
+
+            // Stream directly into your existing SheetJS Excel generation workflow architecture
+            const worksheet = XLSX.utils.json_to_sheet(parsedHistory);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(
+              workbook,
+              worksheet,
+              "Recovered Cheques Log",
+            );
+            worksheet["!cols"] = [
+              { wch: 24 },
+              { wch: 20 },
+              { wch: 35 },
+              { wch: 22 },
+              { wch: 22 },
+            ];
+
+            const fileDate = new Date().toISOString().split("T")[0];
+            XLSX.writeFile(
+              workbook,
+              `Recovered_Cheque_Report_${fileDate}.xlsx`,
+            );
+
+            // Complete instant database cleanup sequence
+            localStorage.removeItem(selectedArchiveKey);
+            setArchivePasswordInput("");
+            setSelectedArchiveKey("");
+
+            // Refresh the list view records parameters
+            scanForQuarantinedLogs();
+            showToast(
+              "Cheque Log sheet successfully unlocked and downloaded to Excel!",
+              "success",
+            );
+          } catch (error) {
+            // Inject the small, clear text feedback validation indicator label
+            setArchiveRecoveryError(
+              "⚠️ Incorrect password! This archived log remains locked.",
+            );
+          }
+        };
+
+        // Unified cross-viewport router function to focus and scroll fields smoothly
+        const focusAndScrollToInput = (fieldKey) => {
+          setActiveFieldKey(fieldKey);
+
+          let targetRef = null;
+          if (fieldKey === "payee") targetRef = payeeRef;
+          if (fieldKey === "amountNumeric" || fieldKey === "amountWords")
+            targetRef = amountRef;
+          if (fieldKey === "date") targetRef = dateRef;
+          if (fieldKey === "all") targetRef = settingsRef;
+
+          if (targetRef && targetRef.current) {
+            targetRef.current.scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+            });
+
+            // If it's a direct text input field, instantly place the text cursor inside it for the user
+            const inputElement =
+              targetRef.current.querySelector("input, select");
+            if (inputElement) {
+              setTimeout(() => inputElement.focus(), 300);
+            }
+          }
+        };
+
+        // Synchronize configuration parameters when swapping default bank baselines
+        const handleBankChange = (bankKey) => {
+          setSelectedBank(bankKey);
+          const stored = localStorage.getItem(`cheque_preset_${bankKey}`);
+          if (stored) {
+            setFields(JSON.parse(stored));
+          } else {
+            setFields(DEFAULT_PRESETS[bankKey].fields);
+          }
+        };
+
+        // Handle calibration parameter updating
+        const updateFieldProperty = (fieldKey, property, value) => {
+          const updated = {
+            ...fields,
+            [fieldKey]: {
+              ...fields[fieldKey],
+              [property]:
+                property === "fontFamily" || property === "fontWeight"
+                  ? value
+                  : parseFloat(value) || 0,
+            },
+          };
+          console.log(updated);
+          setFields(updated);
+        };
+
+        // Save layout specifications locally
+        const saveCustomPreset = () => {
+          localStorage.setItem(
+            `cheque_preset_${selectedBank}`,
+            JSON.stringify(fields),
+          );
+          showToast(
+            `Presets for ${selectedBank.toUpperCase()} saved successfully!`,
+            "success",
+          );
+        };
+
+        // Reset layout calibrations to hardware factory values
+        const resetToDefault = () => {
+          if (confirm("Reset current parameters back to factory settings?")) {
+            setFields(DEFAULT_PRESETS[selectedBank].fields);
+            localStorage.removeItem(`cheque_preset_${selectedBank}`);
+          }
+        };
+
+        // Parse system date format into separate CTS array sequence components
+        const formatSplitDate = (dateStr) => {
+          if (!dateStr) return Array(8).fill("");
+          const parts = dateStr.split("-");
+          if (parts.length !== 3) return Array(8).fill("");
+          const year = parts[0];
+          const month = parts[1];
+          const day = parts[2];
+          // Standard Indian cheque sequence format expects: DDMMYYYY
+          const formattedSequence = day + month + year;
+          return formattedSequence.split("");
+        };
+
+        // Function to execute print and log the event with a Print logic
+        // that holds the log entry in a "pending state" until manually verified
+        const handleExecutePrint = () => {
+          const currentTimeObj = new Date();
+          const localizedTimeString = currentTimeObj.toLocaleString("en-IN", {
+            timeZone: "Asia/Kolkata",
+          });
+          const currentEpochMs = currentTimeObj.getTime();
+
+          // 1. Construct the prospective log payload
+          const prospectiveLog = {
+            "Bank Template": selectedBank.toUpperCase(),
+            "Payee Legal Name": payeeName,
+            "Transaction Amount (₹)": parseFloat(amount) || 0,
+            "Cheque Date": chequeDate,
+            Timestamp: localizedTimeString,
+          };
+
+          // 3. Dialogue Lifecycle Capture Hook
+          const triggerVerificationModal = () => {
+            window.removeEventListener("afterprint", triggerVerificationModal);
+
+            // Instead of auto-saving, freeze the data record in holding state
+            setPendingLogEntry(prospectiveLog);
+            setShowVerifyToast(true);
+            setIsRespooling(false);
+          };
+
+          window.addEventListener("afterprint", triggerVerificationModal);
+          window.print();
+        };
+
+        // Executes if the user confirms the physical cheque leaf printed cleanly
+        const confirmPrintSuccess = () => {
+          if (!pendingLogEntry || !encryptionKey) return;
+
+          const finalUpdatedHistory = [pendingLogEntry, ...printHistory];
+          setPrintHistory(finalUpdatedHistory);
+
+          // Encrypt the entire collection payload package on the fly
+          const ciphertext = CryptoJS.AES.encrypt(
+            JSON.stringify(finalUpdatedHistory),
+            encryptionKey,
+          ).toString();
+          localStorage.setItem("cheque_print_history_encrypted", ciphertext);
+
+          // Clear out UI notification alert anchors
+          setShowVerifyToast(false);
+          setPendingLogEntry(null);
+        };
+
+        // Executes if the hardware jammed or failed
+        const discardFailedPrint = () => {
+          setShowVerifyToast(false);
+          setPendingLogEntry(null);
+        };
+
+        // Function to compile history array and download a formatted Excel report
+        const exportHistoryToExcel = () => {
+          if (printHistory.length === 0) {
+            showToast("No Cheque Print Logs found!", "error");
+            return;
+          }
+
+          // Create a clean layout worksheet object mapping our structured column fields
+          const worksheet = XLSX.utils.json_to_sheet(printHistory);
+          const workbook = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(
+            workbook,
+            worksheet,
+            "Printed Cheques Log",
+          );
+
+          // Format column widths dynamically so strings fit comfortably inside cells
+          const maxProps = [
+            { wch: 24 }, // Timestamp
+            { wch: 20 }, // Bank Template Used
+            { wch: 35 }, // Payee Legal Name
+            { wch: 22 }, // Transaction Amount
+            { wch: 22 }, // Date
+          ];
+          worksheet["!cols"] = maxProps;
+
+          // Generate localized date string for filename resolution
+          const fileDate = new Date().toISOString().split("T")[0];
+          XLSX.writeFile(workbook, `Cheque_Print_Report_${fileDate}.xlsx`);
+        };
+
+        // Clear local logs with double-check alert parameters
+        const clearPrintHistory = () => {
+          if (
+            confirm(
+              "Are you absolutely sure you want to purge all printed logs on this machine? This action cannot be undone.",
+            )
+          ) {
+            setPrintHistory([]);
+            localStorage.removeItem("cheque_print_history_encrypted");
+          }
+        };
+
+        // Gathers all bank layouts from localStorage and compiles a downloadable backup file
+        const exportConfigurationsToFile = () => {
+          const keysToBackup = BANK_KEYS;
+          const backupPayload = {};
+
+          // Pull custom configurations from memory cache
+          keysToBackup.forEach((bankKey) => {
+            const savedData = localStorage.getItem(`cheque_preset_${bankKey}`);
+            if (savedData) {
+              backupPayload[bankKey] = JSON.parse(savedData);
+            }
+          });
+
+          if (Object.keys(backupPayload).length === 0) {
+            showToast(
+              "No custom presets parameters found. Default presets do not need to be exported.",
+              "warning",
+            );
+            return;
+          }
+
+          // Create a downloadable plain text data blob stream
+          const dataStr =
+            "data:text/json;charset=utf-8," +
+            encodeURIComponent(JSON.stringify(backupPayload, null, 2));
+          const downloadAnchor = document.createElement("a");
+          downloadAnchor.setAttribute("href", dataStr);
+          downloadAnchor.setAttribute(
+            "download",
+            `Cheque_Printer_Config_Backup_${new Date().toISOString().split("T")[0]}.json`,
+          );
+          document.body.appendChild(downloadAnchor);
+          downloadAnchor.click();
+          downloadAnchor.remove();
+        };
+
+        // Reads an uploaded file and overrides local presets with the new parameters
+        const importConfigurationsFromFile = (event) => {
+          const fileReader = new FileReader();
+          const targetFile = event.target.files[0];
+
+          if (!targetFile) return;
+
+          fileReader.onload = (e) => {
+            try {
+              const importedPayload = JSON.parse(e.target.result);
+              let validImportCount = 0;
+
+              // Validate and update values for each bank key found in the file
+              Object.keys(importedPayload).forEach((bankKey) => {
+                if (BANK_KEYS.includes(bankKey)) {
+                  localStorage.setItem(
+                    `cheque_preset_${bankKey}`,
+                    JSON.stringify(importedPayload[bankKey]),
+                  );
+                  validImportCount++;
+                }
+              });
+
+              if (validImportCount > 0) {
+                showToast(
+                  `Successfully synchronized ${validImportCount} bank presets! The application will now reload to apply the updates.`,
+                  "success",
+                );
+                // Force a page refresh to clear state memories and reload variables
+                window.location.reload();
+              } else {
+                showToast(
+                  "Invalid format: The file uploaded does not contain compatible bank calibration parameters.",
+                  "error",
+                );
+              }
+            } catch (error) {
+              showToast(
+                "Critical Parse Error: Unable to read file layout. Make sure it is a valid backup configuration JSON file.",
+                "error",
+              );
+            }
+          };
+
+          fileReader.readAsText(targetFile);
+        };
+
+        // Global System Trigger for Non-Intrusive Toast Alerts
+        const showToast = (message, type = "success") => {
+          const uniqueId = new Date().getTime() + Math.random();
+
+          // Append new item to stack
+          setToasts((prevToasts) => [
+            ...prevToasts,
+            { id: uniqueId, message, type },
+          ]);
+
+          // Background countdown timer to handle automatic dismissal loops after 4000ms
+          setTimeout(() => {
+            setToasts((prevToasts) =>
+              prevToasts.filter((toast) => toast.id !== uniqueId),
+            );
+          }, 4000);
+        };
+
+        // Intercepts when the operator clicks down on the workspace canvas background
+        const handleCanvasMouseDown = (e) => {
+          // Block actions if a verification prompt layer is locked over the viewport
+          if (showVerifyToast) return;
+
+          setIsDraggingCanvas(true);
+          // Store the exact screen coordinates where the grab gesture started
+          setDragStartPoint({
+            x: e.clientX - panOffset.x,
+            y: e.clientY - panOffset.y,
+          });
+        };
+
+        // Recalculates offsets continuously as the mouse moves across coordinates
+        const handleCanvasMouseMove = (e) => {
+          if (!isDraggingCanvas || showVerifyToast) return;
+
+          // Deduct current coordinates from start anchors to find displacement vectors
+          setPanOffset({
+            x: e.clientX - dragStartPoint.x,
+            y: e.clientY - dragStartPoint.y,
+          });
+        };
+
+        // Disengages dragging calculations when clicking actions release
+        const handleCanvasMouseUpOrLeave = () => {
+          setIsDraggingCanvas(false);
+        };
+
+        // Utility method to clear pan translations and return sheet to dead center
+        const resetCanvasView = () => {
+          setZoomFactor(DEFAULT_ZOOM_FACTOR);
+          setPanOffset({ x: 0, y: 0 });
+        };
+
+        // Dynamic string parsing computing with responsive word wrap thresholds
+        const generatedWords = convertAmountToIndianWords(amount);
+        const splitLines = wrapTextToTwoLines(generatedWords, maxLine1Chars);
+        const amountLines = addSecurityMarkers(splitLines);
+        const payeeLines = addSecurityMarkers(
+          wrapTextToTwoLines((payeeName || "").trim(), maxPayeeLine1Chars),
+        );
+        const rawSplitDateArray = formatSplitDate(chequeDate);
+
+        return (
+          <React.Fragment>
+            {/* WEB INTERFACE APP STRUCTURE */}
+            <div className="min-h-screen flex flex-col no-print bg-slate-900 text-slate-100">
+              {/* FLOATING HARDWARE VERIFICATION DOUBLE CHECK AUDIT OVERLAY */}
+              {showVerifyToast && pendingLogEntry && (
+                <div className="fixed top-24 right-8 z-[90] w-[28rem] bg-slate-950 border-2 border-amber-500/80 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] rounded-2xl p-6 no-print animate-fade-in select-none">
+                  <div className="flex flex-col gap-4.5">
+                    {/* Header Scale with Bigger Vector Assets */}
+                    <div className="flex items-start gap-3.5 border-b border-slate-800/60 pb-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                        <i
+                          data-lucide="printer"
+                          className="w-5 h-5 animate-pulse"
+                        ></i>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-base font-bold text-slate-100 tracking-tight">
+                          Hardware Print Verification
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-1 leading-normal">
+                          Spooler payload processed for:
+                          <span className="block text-sm text-amber-400 font-semibold tracking-wide mt-0.5">
+                            {pendingLogEntry["Payee Legal Name"]}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Highly Visible Financial Transaction Breakdown Box */}
+                    <div className="grid grid-cols-2 gap-3 bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl text-xs font-mono">
+                      <div>
+                        <span className="block text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">
+                          Amount Spooled
+                        </span>
+                        <span className="text-slate-200 font-sans font-bold text-sm text-emerald-400">
+                          ₹
+                          {pendingLogEntry[
+                            "Transaction Amount (₹)"
+                          ].toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">
+                          Bank Blueprint
+                        </span>
+                        <span className="text-slate-200 font-sans font-medium text-sm text-blue-400">
+                          {pendingLogEntry["Bank Template"]}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Operational Instruction Prompt */}
+                    <div className="text-xs text-slate-300 font-medium bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center gap-2 shadow-inner">
+                      <i
+                        data-lucide="help-circle"
+                        className="w-4 h-4 text-emerald-400 shrink-0"
+                      ></i>
+                      <span>
+                        Did the physical hardware machine print this leaf
+                        correctly?
+                      </span>
+                    </div>
+
+                    {/* Upscaled Action Buttons Cluster */}
+                    <div className="grid grid-cols-2 gap-3 pt-0.5">
+                      {/* Success Action Confirmation */}
+                      <button
+                        onClick={confirmPrintSuccess}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-sm transition-all shadow-md text-center flex items-center justify-center gap-1.5 cursor-pointer hover:shadow-emerald-900/20 active:scale-98"
+                      >
+                        <i data-lucide="check-square" className="w-4 h-4"></i>
+                        <span>Yes, Log Entry</span>
+                      </button>
+
+                      {/* Hardware Error Action Discard */}
+                      <button
+                        onClick={discardFailedPrint}
+                        className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 font-semibold py-3 rounded-xl text-sm transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                      >
+                        <i
+                          data-lucide="x-square"
+                          className="w-4 h-4 text-red-400"
+                        ></i>
+                        <span>No, Discard Log</span>
+                      </button>
+                    </div>
+
+                    {/* Quick Access Re-spool Utility Link Row */}
+                    <div className="text-center pt-2 border-t border-slate-900 flex items-center justify-center">
+                      <button
+                        onClick={() => window.print()}
+                        className="text-xs text-blue-400 hover:text-blue-300 font-mono font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer group/spool"
+                      >
+                        <i
+                          data-lucide="refresh-cw"
+                          className="w-3.5 h-3.5 transition-transform group-hover/spool:rotate-45"
+                        ></i>
+                        <span className="underline decoration-blue-500/40 group-hover/spool:decoration-blue-400">
+                          Retry Cheque Print
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div
+                className={` transition-all duration-300 ${showVerifyToast ? "pointer-events-none filter blur-[4px] brightness-[0.35]" : ""}`}
+              >
+                {/* Header Controls Block */}
+                <header className="overflow-hidden h-[calc(8.4vh)] bg-slate-950 p-2 border-b border-slate-800 flex justify-between items-center shadow-lg select-none">
+                  <div className="flex items-center space-x-3">
+                    <i
+                      data-lucide="printer"
+                      className="w-5 h-5 text-emerald-500 animate-pulse"
+                    ></i>
+                    <div>
+                      <h1 className="text-md font-bold text-slate-100 tracking-tight">
+                        CTS-2010 Cheque Printing Suite
+                      </h1>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    {/* History Count Indicator Badge */}
+                    <div className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300 flex items-center gap-2">
+                      <i
+                        data-lucide="file-text"
+                        className="w-3.5 h-3.5 text-amber-500"
+                      ></i>
+                      Logs:{" "}
+                      <span className="text-amber-400 font-bold">
+                        {printHistory.length}
+                      </span>
+                    </div>
+
+                    {/* Download Excel Sheet Button */}
+                    <button
+                      onClick={exportHistoryToExcel}
+                      className="bg-blue-600 hover:bg-blue-500 font-medium px-4 py-2 rounded-lg text-sm transition shadow-md flex items-center gap-1.5 cursor-pointer text-white"
+                      title="Download data logs as Excel spreadsheet"
+                    >
+                      <i data-lucide="download" className="w-4 h-4"></i>
+                      <span>Download Logs</span>
+                    </button>
+
+                    {/* Active Spooler Trigger */}
+                    <button
+                      onClick={handleExecutePrint}
+                      className="bg-emerald-600 hover:bg-emerald-500 font-bold px-5 py-2 rounded-lg text-sm transition shadow-md flex items-center gap-1.5 cursor-pointer text-white"
+                    >
+                      <i data-lucide="printer" className="w-4 h-4"></i>
+                      <span>Print Cheque</span>
+                    </button>
+                  </div>
+                </header>
+
+                {/* Main Working Dashboard split view */}
+                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden h-[calc(91.6vh)]">
+                  {/* LEFT PANEL: INPUT DATA & ALIGNMENT CONFIGURATORS */}
+                  <div className="w-full lg:w-80 xl:w-96 bg-slate-950 p-5 overflow-y-auto custom-sidebar-scroll border-r border-slate-800 flex flex-col gap-5 shrink-0 h-full transition-all relative">
+                    {/* Section: Core Preset Selectors */}
+                    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+                      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Select Bank Blueprint
+                      </label>
+                      <select
+                        value={selectedBank}
+                        onChange={(e) => handleBankChange(e.target.value)}
+                        disabled={showVerifyToast}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="sbi">State Bank of India (SBI)</option>
+                        <option value="axis">Axis Bank Ltd</option>
+                        <option value="hdfc">HDFC Bank Ltd</option>
+                        <option value="icici">ICICI Bank Ltd</option>
+                        <option value="indusind">IndusInd Bank Ltd</option>
+                      </select>
+                    </div>
+
+                    {/* Section: Transaction Ledger Elements */}
+                    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4">
+                      <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">
+                        Cheque Data Input
+                      </h3>
+
+                      <div
+                        ref={payeeRef}
+                        className="transition-all duration-200"
+                      >
+                        <label className="text-xs text-slate-300 block mb-1">
+                          Payee Name
+                        </label>
+                        <input
+                          type="text"
+                          value={payeeName}
+                          onChange={(e) => setPayeeName(e.target.value)}
+                          disabled={showVerifyToast}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                        />
+                        <WrapLimitControl
+                          label="Payee Line 1 Limit"
+                          value={maxPayeeLine1Chars}
+                          onChange={setMaxPayeeLine1Chars}
+                          min={20}
+                          max={100}
+                          disabled={showVerifyToast}
+                        />
+                      </div>
+
+                      <div
+                        ref={amountRef}
+                        className="transition-all duration-200"
+                      >
+                        <label className="text-xs text-slate-300 block mb-1">
+                          Amount (Numerical ₹)
+                        </label>
+                        <input
+                          type="text"
+                          value={formatAmountInput(amount)}
+                          onChange={(e) => {
+                            let raw = e.target.value.replace(/,/g, "");
+                            if (raw === "") {
+                              setAmount("");
+                              return;
+                            }
+                            // Digits only, one decimal point, max 2 decimal digits (paise)
+                            if (!/^\d*\.?\d{0,2}$/.test(raw)) return;
+
+                            const maxLimit = 99999999999; // 9,999 Crores baseline cap (rupees part)
+                            const hasDot = raw.includes(".");
+                            let [intPart, decPart = ""] = raw.split(".");
+                            intPart = intPart.replace(/^0+(?=\d)/, "") || "0";
+                            if (Number(intPart) > maxLimit)
+                              intPart = String(maxLimit);
+                            setAmount(
+                              hasDot ? `${intPart}.${decPart}` : intPart,
+                            );
+                          }}
+                          inputMode="decimal"
+                          disabled={showVerifyToast}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div
+                        ref={dateRef}
+                        className="transition-all duration-200"
+                      >
+                        <label className="text-xs text-slate-300 block mb-1">
+                          Cheque Date
+                        </label>
+                        {/* Relative layout frame container anchor */}
+                        <div className="relative flex items-center justify-end">
+                          <input
+                            type="date"
+                            value={chequeDate}
+                            onChange={(e) => setChequeDate(e.target.value)}
+                            disabled={showVerifyToast}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 pr-10 text-sm text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                          />
+                          {/* High-fidelity custom Lucide vector icon overlay */}
+                          <div className="absolute right-3 pointer-events-none text-slate-500 flex items-center justify-center h-full z-0 transition-colors focus-within:text-blue-400">
+                            <i data-lucide="calendar" className="w-4 h-4"></i>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                        <span className="block text-[10px] text-slate-400 font-mono uppercase">
+                          Amount in Words:
+                        </span>
+                        <span className="text-xs text-amber-400 font-serif italic">
+                          {generatedWords}
+                        </span>
+                      </div>
+
+                      {/* Interactive Word Wrap Threshold Controller */}
+                      <WrapLimitControl
+                        label="Line 1 Word Limit"
+                        value={maxLine1Chars}
+                        onChange={setMaxLine1Chars}
+                        min={30}
+                        max={150}
+                        disabled={showVerifyToast}
+                      />
+                    </div>
+
+                    {/* Section: Position Adjustment Settings */}
+                    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 flex flex-col space-y-4">
+                      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                          Settings
+                        </h3>
+                      </div>
+
+                      <div
+                        ref={settingsRef}
+                        className="transition-all duration-200"
+                      >
+                        <label className="text-xs text-slate-300 block mb-1">
+                          Which field do you want to adjust?
+                        </label>
+                        <select
+                          value={activeFieldKey}
+                          onChange={(e) => setActiveFieldKey(e.target.value)}
+                          disabled={showVerifyToast}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="all">
+                            ✨ All Components (Global Shift)
+                          </option>
+                          <option value="acPayee">🔒 A/C Payee</option>
+                          <option value="payee">Payee Name Field</option>
+                          <option value="amountWords">Amount in Words</option>
+                          <option value="amountNumeric">
+                            Numerical Value Field (₹)
+                          </option>
+                          <option value="date">Date</option>
+                        </select>
+                      </div>
+
+                      {/* Advanced Position and Dimension Calibration Grid */}
+                      <div className="grid grid-cols-2 gap-3 pt-2 select-none">
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            Top Position (mm)
+                          </label>
+                          <NumberField
+                            step="0.5"
+                            value={
+                              activeFieldKey === "all"
+                                ? globalOffset.top
+                                : fields[activeFieldKey]?.top || 0
+                            }
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              if (activeFieldKey === "all") {
+                                setGlobalOffset((prev) => ({
+                                  ...prev,
+                                  top: val,
+                                }));
+                              } else {
+                                updateFieldProperty(activeFieldKey, "top", val);
+                              }
+                            }}
+                            disabled={showVerifyToast}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            Left Position (mm)
+                          </label>
+                          <NumberField
+                            step="0.5"
+                            value={
+                              activeFieldKey === "all"
+                                ? globalOffset.left
+                                : fields[activeFieldKey]?.left || 0
+                            }
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              if (activeFieldKey === "all") {
+                                setGlobalOffset((prev) => ({
+                                  ...prev,
+                                  left: val,
+                                }));
+                              } else {
+                                updateFieldProperty(
+                                  activeFieldKey,
+                                  "left",
+                                  val,
+                                );
+                              }
+                            }}
+                            disabled={showVerifyToast}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            Font Size (mm)
+                          </label>
+                          <NumberField
+                            step="0.1"
+                            value={
+                              activeFieldKey === "all"
+                                ? ""
+                                : fields[activeFieldKey]?.fontSize || ""
+                            }
+                            onChange={(e) =>
+                              activeFieldKey !== "all" &&
+                              updateFieldProperty(
+                                activeFieldKey,
+                                "fontSize",
+                                e.target.value,
+                              )
+                            }
+                            disabled={
+                              activeFieldKey === "all" || showVerifyToast
+                            }
+                            placeholder={activeFieldKey === "all" ? "N/A" : ""}
+                            className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none ${activeFieldKey === "all" ? "text-slate-600 cursor-not-allowed" : "text-emerald-400"}`}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">
+                            {activeFieldKey === "acPayee"
+                              ? "Crossing Width (mm)"
+                              : "Letter Spacing (mm)"}
+                          </label>
+                          <NumberField
+                            step={activeFieldKey === "acPayee" ? "1.0" : "0.1"}
+                            value={
+                              activeFieldKey === "date"
+                                ? fields.date.letterSpacing
+                                : activeFieldKey === "acPayee"
+                                  ? fields.acPayee.width
+                                  : ""
+                            }
+                            onChange={(e) => {
+                              if (activeFieldKey === "date") {
+                                updateFieldProperty(
+                                  "date",
+                                  "letterSpacing",
+                                  e.target.value,
+                                );
+                              } else if (activeFieldKey === "acPayee") {
+                                updateFieldProperty(
+                                  "acPayee",
+                                  "width",
+                                  e.target.value,
+                                );
+                              }
+                            }}
+                            disabled={
+                              (activeFieldKey !== "date" &&
+                                activeFieldKey !== "acPayee") ||
+                              showVerifyToast
+                            }
+                            placeholder={
+                              activeFieldKey !== "date" &&
+                              activeFieldKey !== "acPayee"
+                                ? "N/A"
+                                : ""
+                            }
+                            className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none 
+                              ${activeFieldKey === "date" ? "text-purple-400" : activeFieldKey === "acPayee" ? "text-amber-400 border-amber-900/50" : "text-slate-600 cursor-not-allowed"}`}
+                          />
+                        </div>
+
+                        {(activeFieldKey === "payee" ||
+                          activeFieldKey === "amountWords") && (
+                          <React.Fragment>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Line 2 Left (mm)
+                              </label>
+                              <NumberField
+                                step="0.5"
+                                value={fields[activeFieldKey]?.line2Left ?? 0}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    activeFieldKey,
+                                    "line2Left",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Line Gap (mm)
+                              </label>
+                              <NumberField
+                                step="0.5"
+                                value={fields[activeFieldKey]?.lineGap ?? 0}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    activeFieldKey,
+                                    "lineGap",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                              />
+                            </div>
+                          </React.Fragment>
+                        )}
+
+                        {/* Configurable Secondary Controls Row Layer */}
+                        {activeFieldKey === "acPayee" && (
+                          <React.Fragment>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Rotation Angle (deg)
+                              </label>
+                              <NumberField
+                                step="1"
+                                min="-90"
+                                max="90"
+                                value={fields.acPayee?.angle ?? -15}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    "acPayee",
+                                    "angle",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-amber-900/40 rounded-lg p-2 text-sm font-mono text-center text-amber-400 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Text Spacing (mm)
+                              </label>
+                              <NumberField
+                                step="0.1"
+                                min="0"
+                                value={fields.acPayee?.letterSpacing ?? 0.4}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    "acPayee",
+                                    "letterSpacing",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-amber-900/40 rounded-lg p-2 text-sm font-mono text-center text-purple-400 focus:outline-none"
+                              />
+                            </div>
+                          </React.Fragment>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">
+                          Font Family Configuration
+                        </label>
+                        <select
+                          value={
+                            activeFieldKey === "all"
+                              ? "Arial"
+                              : fields[activeFieldKey]?.fontFamily || "Arial"
+                          }
+                          onChange={(e) =>
+                            activeFieldKey !== "all" &&
+                            updateFieldProperty(
+                              activeFieldKey,
+                              "fontFamily",
+                              e.target.value,
+                            )
+                          }
+                          disabled={activeFieldKey === "all"}
+                          className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs focus:outline-none ${activeFieldKey === "all" ? "text-slate-600 cursor-not-allowed" : "text-slate-200"}`}
+                        >
+                          {/* Sans-Serif Group: Best for Payee Names and Numeric Fields */}
+                          <optgroup label="Standard Sans-Serif (Modern)">
+                            <option value="Arial">
+                              Arial (Default Corporate)
+                            </option>
+                            <option value="Helvetica">
+                              Helvetica (Clean & Balanced)
+                            </option>
+                            <option value="system-ui">
+                              System UI (Native OS Font)
+                            </option>
+                            <option value="Verdana">
+                              Verdana (High Readability)
+                            </option>
+                          </optgroup>
+
+                          {/* Monospaced Group: Mandatory for rigid fields like Dates or structured columns */}
+                          <optgroup label="Fixed-Width Monospace (Precision Grid)">
+                            <option value="Courier New">
+                              Courier New (Traditional Typewriter)
+                            </option>
+                            <option value="Consolas">
+                              Consolas (Modern Tabular Grid)
+                            </option>
+                            <option value="Monaco">
+                              Monaco (Compact Code Pitch)
+                            </option>
+                            <option value="monospace">
+                              Generic Monospace (System Fallback)
+                            </option>
+                          </optgroup>
+
+                          {/* Serif Group: Often preferred for traditional "Amount in Words" typography lines */}
+                          <optgroup label="Serif (Traditional & Formal)">
+                            <option value="Times New Roman">
+                              Times New Roman (Standard Ledger)
+                            </option>
+                            <option value="Georgia">
+                              Georgia (Elegant & Clear)
+                            </option>
+                            <option value="Garamond">
+                              Garamond (Compact Classical Style)
+                            </option>
+                          </optgroup>
+                        </select>
+                      </div>
+
+                      {/* Custom Font Weight Toggle Button Deck */}
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          disabled={activeFieldKey === "all"}
+                          onClick={() => {
+                            if (activeFieldKey !== "all") {
+                              const isBold =
+                                fields[activeFieldKey]?.fontWeight === "bold";
+                              updateFieldProperty(
+                                activeFieldKey,
+                                "fontWeight",
+                                isBold ? "normal" : "bold",
+                              );
+                            }
+                          }}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-lg border text-xs font-medium transition-all select-none cursor-pointer duration-200
+        ${
+          activeFieldKey === "all"
+            ? "bg-slate-950/40 border-slate-900 text-slate-600 cursor-not-allowed opacity-40"
+            : fields[activeFieldKey]?.fontWeight === "bold"
+              ? "bg-emerald-950/30 border-emerald-500/50 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+              : "bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-slate-100"
+        }
+      `}
+                        >
+                          <div className="flex items-center gap-2">
+                            <i
+                              data-lucide="bold"
+                              className={`w-3.5 h-3.5 transition-transform ${fields[activeFieldKey]?.fontWeight === "bold" ? "scale-110" : ""}`}
+                            ></i>
+                            <span>Bold</span>
+                          </div>
+
+                          {/* Visual State Indicator Badge */}
+                          {activeFieldKey !== "all" && (
+                            <span
+                              className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-mono tracking-wider font-bold transition-colors
+          ${
+            fields[activeFieldKey]?.fontWeight === "bold"
+              ? "bg-emerald-500/20 text-emerald-400 animate-pulse"
+              : "bg-slate-900 text-slate-500"
+          }`}
+                            >
+                              {fields[activeFieldKey]?.fontWeight === "bold"
+                                ? "ON"
+                                : "OFF"}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* SECTION: SYSTEM UTILITIES PANEL */}
+                      <div className="border-t border-slate-800 pt-4 mt-auto space-y-4 shrink-0 select-none">
+                        {/* Sub-Group 1: Direct Component Preset Overrides */}
+                        <div className="space-y-2">
+                          <span className="block text-[10px] text-slate-400 font-mono uppercase tracking-wider">
+                            Preset Settings
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={saveCustomPreset}
+                              className="bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-lg font-medium transition text-center cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                            >
+                              <i data-lucide="save" className="w-3.5 h-3.5"></i>
+                              <span>Save Preset</span>
+                            </button>
+                            <button
+                              onClick={resetToDefault}
+                              className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs py-2.5 rounded-lg font-medium transition text-center cursor-pointer border border-slate-700/60 flex items-center justify-center gap-1.5"
+                            >
+                              <i
+                                data-lucide="rotate-ccw"
+                                className="w-3.5 h-3.5"
+                              ></i>
+                              <span>Reset Defaults</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sub-Group 2: System Data Operations */}
+                        <div className="space-y-2 bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
+                          <span className="block text-[10px] text-slate-400 font-mono uppercase tracking-wider mb-2">
+                            Workspace Settings
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={exportConfigurationsToFile}
+                              className="bg-slate-950 hover:bg-slate-900 border border-slate-700/80 text-slate-200 text-xs py-2 rounded-md font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <i
+                                data-lucide="download"
+                                className="w-3.5 h-3.5 text-slate-400"
+                              ></i>
+                              <span>Export Config</span>
+                            </button>
+                            <label className="bg-slate-950 hover:bg-slate-900 border border-slate-700/80 text-slate-200 text-xs py-2 rounded-md font-medium transition text-center cursor-pointer flex items-center justify-center gap-1.5">
+                              <i
+                                data-lucide="upload"
+                                className="w-3.5 h-3.5 text-slate-400"
+                              ></i>
+                              <span>Import Config</span>
+                              <input
+                                type="file"
+                                accept=".json"
+                                onChange={importConfigurationsFromFile}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+
+                          {/* Sub-Group 3: Destructive Data Purge Control */}
+                          {printHistory.length > 0 && (
+                            <div className="pt-2 mt-2 border-t border-slate-800/80">
+                              <button
+                                onClick={clearPrintHistory}
+                                className="w-full bg-red-950/20 hover:bg-red-950/40 border border-red-900/40 text-red-400 text-[10px] py-1.5 rounded-md transition text-center cursor-pointer font-mono tracking-wider flex items-center justify-center gap-1.5"
+                              >
+                                <i
+                                  data-lucide="trash-2"
+                                  className="w-3.5 h-3.5"
+                                ></i>
+                                <span>
+                                  Delete Print Logs ({printHistory.length})
+                                </span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* HIGH-FIDELITY ARCHIVE HISTORY VAULT RECOVERY CONSOLE PANEL */}
+                          {hasQuarantinedLogs &&
+                            quarantinedLogList.length > 0 && (
+                              <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3.5 mt-2 animate-fade-in select-none">
+                                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                                  <i
+                                    data-lucide="archive"
+                                    className="w-4 h-4 text-amber-500"
+                                  ></i>
+                                  <h4 className="text-xs font-bold tracking-wider text-slate-300 uppercase">
+                                    Isolated History Vault (
+                                    {quarantinedLogList.length})
+                                  </h4>
+                                </div>
+
+                                <p className="text-[11px] leading-normal text-slate-400">
+                                  Historical logs were archived on this
+                                  workstation to permit a new daily session
+                                  password configuration.
+                                </p>
+
+                                {/* Dynamic Selectable Chronological Radio List Layout Array */}
+                                <div className="space-y-1.5 max-h-32 overflow-y-auto custom-sidebar-scroll pr-1">
+                                  {quarantinedLogList.map((item) => (
+                                    <label
+                                      key={item.key}
+                                      className={`flex items-center justify-between p-2 rounded-lg border text-[11px] font-mono cursor-pointer transition-all duration-150
+                ${
+                  selectedArchiveKey === item.key
+                    ? "bg-slate-950 border-amber-500/40 text-amber-400"
+                    : "bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700/60 hover:text-slate-300"
+                }
+              `}
+                                    >
+                                      <div className="flex items-center gap-2 truncate flex-1">
+                                        <input
+                                          type="radio"
+                                          name="archive_selection"
+                                          checked={
+                                            selectedArchiveKey === item.key
+                                          }
+                                          onChange={() => {
+                                            setSelectedArchiveKey(item.key);
+                                            setArchiveRecoveryError(""); // Clear errors on toggle
+                                          }}
+                                          className="w-3 h-3 text-amber-500 bg-slate-900 border-slate-700 accent-amber-500 cursor-pointer"
+                                        />
+                                        <span className="truncate">
+                                          {item.label}
+                                        </span>
+                                      </div>
+                                      {selectedArchiveKey === item.key && (
+                                        <span className="text-[9px] font-sans font-bold bg-amber-500/10 text-amber-400 px-1 py-0.5 rounded border border-amber-500/20 shrink-0">
+                                          Active
+                                        </span>
+                                      )}
+                                    </label>
+                                  ))}
+                                </div>
+
+                                {/* Localized Archive Encryption Key Entry Box Field */}
+                                <div className="space-y-1.5 pt-1">
+                                  <div className="relative flex items-center justify-end">
+                                    <input
+                                      type="password"
+                                      value={archivePasswordInput}
+                                      onChange={(e) => {
+                                        setArchivePasswordInput(e.target.value);
+                                        if (archiveRecoveryError)
+                                          setArchiveRecoveryError(""); // Clear errors text when user re-types
+                                      }}
+                                      placeholder="Enter original password"
+                                      className="w-full bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-lg p-2 pr-8 text-xs text-slate-300 font-mono focus:outline-none transition-colors placeholder:font-sans placeholder:text-slate-600 tracking-wider"
+                                    />
+                                    <div className="absolute right-2.5 text-slate-600 pointer-events-none">
+                                      <i
+                                        data-lucide="key"
+                                        className="w-3.5 h-3.5"
+                                      ></i>
+                                    </div>
+                                  </div>
+
+                                  {/* Localized Small Inline Mismatch Validation Indicator Label Text */}
+                                  {archiveRecoveryError && (
+                                    <div className="text-[10px] text-red-400 font-medium px-1 flex items-start gap-1 leading-normal">
+                                      <span>{archiveRecoveryError}</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Decrypt and Download Spooler Action Button */}
+                                <button
+                                  type="button"
+                                  onClick={handleRecoverArchiveToExcel}
+                                  className="w-full bg-amber-600 hover:bg-amber-500 font-bold py-2 rounded-lg text-xs text-white transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer shadow-amber-900/10"
+                                >
+                                  <i
+                                    data-lucide="file-spreadsheet"
+                                    className="w-3.5 h-3.5"
+                                  ></i>
+                                  <span>Decrypt & Download Excel</span>
+                                </button>
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RIGHT PANEL: INTERACTIVE CANVAS SIMULATING A4 PAPER LIMITS */}
+                  <div
+                    className={`flex-1 min-w-0 bg-slate-900 flex flex-col items-center justify-center overflow-hidden h-full relative select-none ${showVerifyToast ? "" : isDraggingCanvas ? "cursor-grabbing" : "cursor-grab"}`}
+                    onMouseDown={handleCanvasMouseDown}
+                    onMouseMove={handleCanvasMouseMove}
+                    onMouseUp={handleCanvasMouseUpOrLeave}
+                    onMouseLeave={handleCanvasMouseUpOrLeave}
+                  >
+                    <div className="w-full flex flex-col items-center gap-4 py-4">
+                      <span className="text-xs font-semibold text-slate-400 tracking-widest uppercase">
+                        Landscape A4 Layout Virtual Canvas Boundary (297mm x
+                        210mm)
+                      </span>
+
+                      <div className="w-full overflow-visible flex items-center justify-center p-2 [container-type:inline-size]">
+                        {/* A4 landscape aspect screen container wrapper */}
+                        <div
+                          className="a4-screen-wrapper relative flex items-center justify-end shadow-2xl transition-transform duration-75"
+                          style={{
+                            /* Chain the scale factor and drag translations together */
+                            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomFactor})`,
+                            transformOrigin: "center center",
+                          }}
+                        >
+                          {/* Reference indicators simulating printer alignment limits */}
+                          <div className="absolute inset-y-0 right-0 pointer-events-none flex items-center pr-2">
+                            <span className="text-[10px] text-red-400 rotate-90 transform origin-bottom-right translate-y-8 font-mono tracking-widest"></span>
+                          </div>
+
+                          {/* The Live Interactive Cheque Container */}
+                          <div
+                            className="cheque-canvas-screen border border-slate-300 shadow-inner overflow-hidden select-none bg-cover bg-center transition-all"
+                            style={{
+                              position: "relative",
+                              backgroundImage: `linear-gradient(rgba(240, 248, 255, 0.85), rgba(240, 248, 255, 0.85)), url(${DEFAULT_PRESETS[selectedBank].bgUrl})`,
+                            }}
+                          >
+                            <div
+                              className="global-offset-wrapper"
+                              style={{
+                                transform: `scale(calc(50vw / 297mm)) translate(${globalOffset.left + 10}mm, ${globalOffset.top + 6.2}mm)` /* Live global offset + preview-only margin (10mm left, 6.2mm top) for the enlarged preview cheque */,
+                              }}
+                            >
+                              {/* Dynamic State-Linked Preview Element: A/C Payee Corner Crossing (100% Configurable) */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: `${fields.acPayee?.top ?? 5.0}mm`,
+                                  left: `${fields.acPayee?.left ?? 6.0}mm`,
+                                  width: `${fields.acPayee?.width ?? 50.0}mm`,
+                                  height: "10mm",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  justifyContent: "center",
+                                  alignItems: "center",
+                                  fontFamily:
+                                    fields.acPayee?.fontFamily || "Arial",
+                                  transform: `rotate(${fields.acPayee?.angle ?? -15}deg)`,
+                                  transformOrigin: "center center",
+                                  userSelect: "none",
+                                }}
+                                className={`cursor-pointer rounded transition ${activeFieldKey === "acPayee" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
+                                onClick={() => focusAndScrollToInput("acPayee")}
+                              >
+                                {/* Upper Horizontal Line Boundary */}
+                                <div
+                                  className="w-full"
+                                  style={{
+                                    height: 0,
+                                    borderTop: "0.3mm solid #0f172a",
+                                  }}
+                                ></div>
+
+                                {/* Standard Compliant Mask Text */}
+                                <span
+                                  style={{
+                                    fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
+                                    letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm` /* Linked dynamically to state input */,
+                                  }}
+                                  className="font-bold text-slate-900 uppercase tracking-widest my-0.5"
+                                >
+                                  A/C Payee
+                                </span>
+
+                                {/* Lower Horizontal Line Boundary */}
+                                <div
+                                  className="w-full"
+                                  style={{
+                                    height: 0,
+                                    borderTop: "0.3mm solid #0f172a",
+                                  }}
+                                ></div>
+                              </div>
+
+                              {/* Layer Element: Payee Name */}
+                              <WrappedFieldLines
+                                config={fields.payee}
+                                lines={payeeLines}
+                                color="#0f172a"
+                                preview
+                                active={activeFieldKey === "payee"}
+                                onClick={() => focusAndScrollToInput("payee")}
+                                placeholder="[Payee Name Placeholder]"
+                              />
+
+                              {/* Layer Element: Amount Words Line 1 */}
+                              <WrappedFieldLines
+                                config={fields.amountWords}
+                                lines={amountLines}
+                                color="#0f172a"
+                                preview
+                                active={activeFieldKey === "amountWords"}
+                                onClick={() =>
+                                  focusAndScrollToInput("amountWords")
+                                }
+                                placeholder="[Amount in words]"
+                              />
+
+                              {/* Layer Element: Numeric Amount Value */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: `${fields.amountNumeric.top}mm`,
+                                  left: `${fields.amountNumeric.left}mm`,
+                                  fontSize: `${fields.amountNumeric.fontSize}mm`,
+                                  fontFamily: fields.amountNumeric.fontFamily,
+                                  lineHeight: 1,
+                                  color: "#0f172a",
+                                  fontWeight:
+                                    fields.amountNumeric.fontWeight || "normal",
+                                  whiteSpace: "nowrap",
+                                }}
+                                className={`cursor-pointer p-0.5 rounded transition ${activeFieldKey === "amountNumeric" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
+                                onClick={() =>
+                                  focusAndScrollToInput("amountNumeric")
+                                }
+                              >
+                                {formatChequeAmount(amount)}
+                              </div>
+
+                              {/* Layer Element: Custom Split-box Date Characters Grid */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: `${fields.date.top}mm`,
+                                  left: `${fields.date.left}mm`,
+                                  fontSize: `${fields.date.fontSize}mm`,
+                                  fontFamily: fields.date.fontFamily,
+                                  lineHeight: 1,
+                                  color: "#0f172a",
+                                  fontWeight:
+                                    fields.date.fontWeight || "normal",
+                                  display: "flex",
+                                  flexDirection: "row",
+                                }}
+                                className={`cursor-pointer p-0.5 rounded transition ${activeFieldKey === "date" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
+                                onClick={() => focusAndScrollToInput("date")}
+                              >
+                                {rawSplitDateArray.map((char, index) => (
+                                  <span
+                                    key={index}
+                                    style={{
+                                      marginRight:
+                                        index === 7
+                                          ? "0mm"
+                                          : `${fields.date.letterSpacing - 1.5}mm`,
+                                      width: "1.2ch",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    {char || "•"}
+                                  </span>
+                                ))}
+                              </div>
+
+                              <div className="absolute bottom-2 left-4 text-[9px] text-slate-500 font-mono select-none">
+                                {DEFAULT_PRESETS[selectedBank].name} Dimensions
+                                Frame (210mm x 96.2mm)
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* PURE INVISIBLE HARDWARE-PRINT MIRROR CONTAINER BLOCK */}
+            <div className="print-only printer-viewport-a4">
+              <div className="cheque-canvas-print">
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    position: "relative",
+                    transform: `translate(${globalOffset.left}mm, ${globalOffset.top}mm)`,
+                  }}
+                >
+                  {/* Dynamic Printing Element: A/C Payee Corner Crossing (100% Mirror Print Synced) */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: `${fields.acPayee?.top ?? 5.0}mm`,
+                      left: `${fields.acPayee?.left ?? 6.0}mm`,
+                      width: `${fields.acPayee?.width ?? 50.0}mm`,
+                      height: "10mm",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      fontFamily: fields.acPayee?.fontFamily || "Arial",
+                      transform: `rotate(${fields.acPayee?.angle ?? -15}deg)` /* Mirrors the exact real-time rotation angle */,
+                      transformOrigin: "center center",
+                    }}
+                  >
+                    {/* Upper Printing Line (True Solid Black) */}
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 0,
+                        borderTop: "0.3mm solid #000000",
+                      }}
+                    ></div>
+
+                    {/* Secured Printing Text */}
+                    <span
+                      style={{
+                        fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
+                        letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm` /* Mirrors the exact tracking pitch */,
+                        fontWeight: "bold",
+                        color: "#000000",
+                        textTransform: "uppercase",
+                        margin: "0.5mm 0",
+                      }}
+                    >
+                      A/C Payee
+                    </span>
+
+                    {/* Lower Printing Line (True Solid Black) */}
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 0,
+                        borderTop: "0.3mm solid #000000",
+                      }}
+                    ></div>
+                  </div>
+
+                  {/* Payee Target Text */}
+                  <WrappedFieldLines
+                    config={fields.payee}
+                    lines={payeeLines}
+                    color="#000000"
+                  />
+
+                  {/* Tokenized Words Line 1 */}
+                  <WrappedFieldLines
+                    config={fields.amountWords}
+                    lines={amountLines}
+                    color="#000000"
+                  />
+
+                  {/* Cross Secured Numeric Amount Layout Line */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: `${fields.amountNumeric.top}mm`,
+                      left: `${fields.amountNumeric.left}mm`,
+                      fontSize: `${fields.amountNumeric.fontSize}mm`,
+                      fontFamily: fields.amountNumeric.fontFamily,
+                      color: "#000000",
+                      fontWeight: fields.amountNumeric.fontWeight || "normal",
+                      lineHeight: 1,
+                      whiteSpace: "nowrap", // Guarantees zero line breaking rules on physical prints
+                      overflow: "visible",
+                    }}
+                  >
+                    {formatChequeAmount(amount)}
+                  </div>
+
+                  {/* Split Space Date Sequences */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: `${fields.date.top}mm`,
+                      left: `${fields.date.left}mm`,
+                      fontSize: `${fields.date.fontSize}mm`,
+                      fontFamily: fields.date.fontFamily,
+                      color: "#000000",
+                      fontWeight: fields.date.fontWeight || "normal",
+                      lineHeight: 1,
+                      display: "flex",
+                      flexDirection: "row",
+                    }}
+                  >
+                    {rawSplitDateArray.map((char, index) => (
+                      <span
+                        key={index}
+                        style={{
+                          marginRight:
+                            index === 7
+                              ? "0mm"
+                              : `${fields.date.letterSpacing}mm`,
+                          width: "1.2ch",
+                          textAlign: "center",
+                        }}
+                      >
+                        {char}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* FLOATING HOVER INTERACTIVE MAGNIFICATION CONSOLE - COMPACT HITBOX LOCK */}
+            {!showVerifyToast && (
+              /* The parent container width is now strictly locked to the icon width (w-8) to prevent accidental hover triggers */
+              <div className="fixed right-0 top-1/3 z-40 w-8 py-3 group no-print select-none pointer-events-auto">
+                {/* Visual Icon Tab - Acts as the exclusive mouse entry anchor window */}
+                <div className="w-8 h-12 bg-slate-950 border-y border-l border-slate-800 hover:border-slate-700 text-slate-300 rounded-l-xl flex items-center justify-center transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)] cursor-pointer group-hover:text-blue-400 group-hover:border-blue-500/50">
+                  <i data-lucide="search" className="w-4 h-4"></i>
+                </div>
+
+                {/* Pop-out Controller Deck Box - Shifted outside the baseline container using an absolute left offset */}
+                <div
+                  className="absolute right-11 top-3 w-72 bg-slate-950/95 border border-slate-800 rounded-2xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.6)] space-y-4 opacity-0 pointer-events-none scale-95 origin-right transition-all duration-200 translate-x-4 group-hover:opacity-100 group-hover:pointer-events-auto group-hover:scale-100 group-hover:translate-x-0 backdrop-blur-lg select-none
+                    after:content-[''] after:absolute after:-right-5 after:top-0 after:w-5 after:h-full after:bg-transparent"
+                >
+                  {/* Title Header with Enhanced Typography Scale */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                      <i
+                        data-lucide="maximize-2"
+                        className="w-3.5 h-3.5 text-emerald-400"
+                      ></i>
+                      Workspace Zoom
+                    </span>
+                    <span className="text-emerald-400 font-bold font-mono text-sm bg-emerald-950/50 px-2.5 py-0.5 rounded-lg border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.05)]">
+                      {Math.round(zoomFactor * 100)}%
+                    </span>
+                  </div>
+
+                  {/* Range Slider Track Setup with Upgraded Contrast Indicators */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center space-x-3">
+                      <span className="text-xs font-semibold text-slate-500 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                        0.8x
+                      </span>
+                      <input
+                        type="range"
+                        min="0.8"
+                        max="2.0"
+                        step="0.05"
+                        value={zoomFactor}
+                        onChange={(e) =>
+                          setZoomFactor(parseFloat(e.target.value))
+                        }
+                        onMouseDown={(e) =>
+                          e.stopPropagation()
+                        } /* Prevents workspace dragging conflict */
+                        className="w-full h-2 bg-slate-900 border border-slate-800 rounded-full appearance-none cursor-pointer accent-emerald-500 focus:outline-none transition-all duration-150 hover:bg-slate-800"
+                      />
+                      <span className="text-xs font-semibold text-slate-500 font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                        2.0x
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Modern, Clean Operational Helper Box */}
+                  {/* Modern, Clean Operational Helper Box */}
+                  <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 flex items-center gap-2 max-w-full overflow-hidden select-none">
+                    {/* Sleek Lucide Vector Vector Help Icon Upgrade */}
+                    <i
+                      data-lucide="help-circle"
+                      className="w-3.5 h-3.5 text-emerald-400 shrink-0"
+                    ></i>
+
+                    {/* Single-Line Safe Typography Constraint Wrapper */}
+                    <span
+                      className="whitespace-nowrap overflow-hidden text-ellipsis flex-1 pr-1"
+                      title="Click & drag empty space to pan layout sheet."
+                    >
+                      Click & drag on empty space to pan
+                    </span>
+                  </div>
+
+                  {/* Action Controller Buttons Row - Micro-interaction upgrade */}
+                  <div className="flex justify-end pt-1 border-t border-slate-900">
+                    <button
+                      type="button"
+                      onClick={resetCanvasView}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      disabled={
+                        zoomFactor === DEFAULT_ZOOM_FACTOR &&
+                        panOffset.x === 0 &&
+                        panOffset.y === 0
+                      }
+                      className="text-xs font-medium text-slate-400 hover:text-slate-100 disabled:opacity-20 disabled:pointer-events-none flex items-center gap-1.5 transition-colors cursor-pointer group/btn"
+                    >
+                      <i
+                        data-lucide="rotate-ccw"
+                        className="w-3.5 h-3.5 transition-transform group-hover/btn:-rotate-45"
+                      ></i>
+                      <span>Reset Zoom</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* HIGH-FIDELITY INTERACTIVE AUTHENTICATION PORTAL MODAL OVERLAY */}
+            {isDashboardLocked && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl no-print select-none animate-fade-in">
+                <div className="w-full max-w-md p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)] text-slate-100 flex flex-col gap-4 mx-4">
+                  {/* Dynamic Simple Typography Header Deck */}
+                  <div className="flex items-center gap-3 border-b border-slate-800/80 pb-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                      <i
+                        data-lucide={isFirstTimeSetup ? "shield-check" : "lock"}
+                        className="w-4 h-4"
+                      ></i>
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold tracking-tight text-slate-100">
+                        {isFirstTimeSetup
+                          ? "Set a Password to Secure Your Logs"
+                          : "Enter Password to Unlock Logs"}
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {isFirstTimeSetup
+                          ? "Configure local security settings for this machine."
+                          : "Input security credentials to access transaction data."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Operational Validation Feedback Alert Badge */}
+                  {authErrorMessage && (
+                    <div className="bg-red-950/20 border border-red-900/40 text-red-400 px-3 py-2.5 rounded-xl text-xs font-medium flex items-start gap-2 leading-normal animate-shake">
+                      <i
+                        data-lucide="alert-triangle"
+                        className="w-3.5 h-3.5 shrink-0 mt-0.5"
+                      ></i>
+                      <span>{authErrorMessage}</span>
+                    </div>
+                  )}
+
+                  {/* Dedicated Inline Form Action Framework */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleAuthSubmit();
+                      console.log("Password entry processing spooled.");
+                    }}
+                    className="space-y-4"
+                  >
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-mono text-slate-400 uppercase tracking-wider block">
+                        {isFirstTimeSetup
+                          ? "Create Master Password"
+                          : "Password Verification Key"}
+                      </label>
+                      <div className="relative flex items-center justify-end">
+                        <input
+                          type="password"
+                          value={authPasswordInput}
+                          onChange={(e) => setAuthPasswordInput(e.target.value)}
+                          placeholder={
+                            isFirstTimeSetup
+                              ? "Create password (Min 4 characters)"
+                              : "Enter your password"
+                          }
+                          className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl p-2.5 pr-10 text-sm text-slate-200 font-mono tracking-widest focus:outline-none transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-600"
+                          autoFocus
+                        />
+                        <div className="absolute right-3 text-slate-600 pointer-events-none">
+                          <i data-lucide="key-round" className="w-4 h-4"></i>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Operational Action Submissions Cluster Button */}
+                    <div className="pt-1 flex flex-col gap-2">
+                      <button
+                        type="submit"
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-2.5 rounded-xl text-sm transition shadow-lg text-white flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <i
+                          data-lucide={
+                            isFirstTimeSetup ? "check-circle" : "unlock"
+                          }
+                          className="w-4 h-4"
+                        ></i>
+                        <span>
+                          {isFirstTimeSetup
+                            ? "Save & Open Workspace"
+                            : "Unlock History"}
+                        </span>
+                      </button>
+
+                      {/* ALTERNATIVE RECOVERY RESET PATHWAY OPTION BUTTON BUTTON */}
+                      {!isFirstTimeSetup && authErrorMessage && (
+                        <button
+                          type="button"
+                          onClick={handleQuarantineAndReset}
+                          className="w-full mt-1 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 font-medium py-2 rounded-xl text-xs transition text-center flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <i
+                            data-lucide="archive-restore"
+                            className="w-3.5 h-3.5 text-amber-500"
+                          ></i>
+                          <span>
+                            Proceed with a New Password (Archive Old Logs)
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* FLOATING SYSTEM TOAST ALERTS STACK ROW CONTAINER */}
+            <div className="fixed bottom-6 left-6 z-[200] flex flex-col gap-2.5 max-w-sm pointer-events-none no-print select-none">
+              {toasts.map((toast) => (
+                <div
+                  key={toast.id}
+                  className={`pointer-events-auto flex items-start gap-2.5 p-3.5 rounded-xl border shadow-xl backdrop-blur-md transition-all duration-300 transform translate-y-0 animate-fade-in
+                    ${
+                      toast.type === "error"
+                        ? "bg-slate-950/95 border-red-500/40 text-red-400"
+                        : toast.type === "warning"
+                          ? "bg-slate-950/95 border-amber-500/40 text-amber-400"
+                          : "bg-slate-950/95 border-emerald-500/40 text-emerald-400"
+                    }
+                  `}
+                >
+                  <div className="shrink-0 mt-0.5">
+                    <i
+                      data-lucide={
+                        toast.type === "error"
+                          ? "alert-circle"
+                          : toast.type === "warning"
+                            ? "alert-triangle"
+                            : "check-circle"
+                      }
+                      className="w-4 h-4"
+                    ></i>
+                  </div>
+                  <div className="text-xs font-medium leading-normal tracking-wide text-slate-200">
+                    {toast.message}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setToasts((prev) => prev.filter((t) => t.id !== toast.id))
+                    }
+                    className="ml-auto text-slate-500 hover:text-slate-300 transition-colors pl-1 cursor-pointer"
+                  >
+                    <i data-lucide="x" className="w-3 h-3"></i>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </React.Fragment>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+  </body>
+</html>
