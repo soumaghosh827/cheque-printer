@@ -394,15 +394,30 @@
               letterSpacing: 0.4,
               angle: -45,
             },
+            // payee: {
+            //   top: 20,
+            //   left: 5,
+            //   line2Left: 5,
+            //   lineGap: 4,
+            //   fontSize: 3.5,
+            //   fontFamily: "Arial",
+            //   fontWeight: "normal",
+            //   letterSpacing: 0,
+            // },
             payee: {
-              top: 20,
-              left: 5,
               line2Left: 5,
-              lineGap: 4,
-              fontSize: 3.5,
               fontFamily: "Arial",
               fontWeight: "normal",
               letterSpacing: 0,
+              lineTop: 27.5,
+              lineThickness: 0.5,
+              textLeft: 5,
+              textRight: 35,
+              textHeight: 2.5,
+              gapAbove: 1,
+              gapBelow: 1,
+              nudgeX: 0,
+              nudgeY: 0,
             },
             amountWords: {
               top: 29,
@@ -413,6 +428,17 @@
               fontFamily: "Arial",
               fontWeight: "normal",
               letterSpacing: 0,
+              lineTop: 35.25,
+              lineThickness: 0.5,
+              line2Top: 43.75,
+              textLeft: 12.5,
+              textRight: 20,
+              textRight2: 57.5,
+              textHeight: 2.5,
+              gapAbove: 1,
+              gapBelow: 1,
+              nudgeX: 0,
+              nudgeY: 0,
             },
             amountNumeric: {
               top: 34.0,
@@ -846,6 +872,217 @@
           x: centreX - ((inkLeft + inkRight) / 2) * k, // centres the visible ink, not the advance width
           y: centreY + ((asc - desc) / 2) * k, // centres the digit height on the box
         };
+      }
+
+      // ---- Printed-line text layout (payee now, amount in words later) ----
+      // Places up to two lines of text relative to a printed fill-in line on the cheque:
+      //  line 1 sits `gapAbove` above the line; line 2 hangs `gapBelow` under it
+      //  (or sits above its own printed line when cfg.line2Top is set).
+      // textHeight is the capital-letter height in mm, so the size is right in any font.
+      function layoutBaselineLines(text, cfg, maxChars, chequeWidth) {
+        const num = (v, d) =>
+          v === undefined || v === null || v === "" || isNaN(Number(v))
+            ? d
+            : Number(v);
+        const clean = (text || "").trim().replace(/\s+/g, " ");
+        const empty = {
+          rows: [],
+          size: 0,
+          shrink: 1,
+          wrappedBy: null,
+          maxTextHeight: null,
+        };
+        if (!clean) return empty;
+
+        const textHeight = num(cfg.textHeight, 2.5);
+        const lineTop = num(cfg.lineTop, 0);
+        const thick = num(cfg.lineThickness, 0.5);
+        const gapAbove = num(cfg.gapAbove, 1);
+        const gapBelow = num(cfg.gapBelow, 1);
+        const left1 = num(cfg.textLeft, 0);
+        const left2 = num(cfg.line2Left, left1);
+        const nudgeX = num(cfg.nudgeX, 0);
+        const nudgeY = num(cfg.nudgeY, 0);
+        const avail1 = chequeWidth - num(cfg.textRight, 0) - left1;
+        const avail2 =
+          chequeWidth - num(cfg.textRight2, num(cfg.textRight, 0)) - left2;
+        const cap = measureText100("H", cfg.fontFamily, cfg.fontWeight);
+        const capH100 = cap.actualBoundingBoxAscent;
+        if (!(capH100 > 0)) return empty;
+        let size = (textHeight * 100) / capH100;
+
+        // Visible (ink) width in mm of a string at the current size
+        const inkW = (s) => {
+          const m = measureText100(s, cfg.fontFamily, cfg.fontWeight);
+          return (
+            ((m.actualBoundingBoxRight + m.actualBoundingBoxLeft) * size) / 100
+          );
+        };
+
+        // Wrap at the real size: the character limit and the available width both apply.
+        // The first word always stays on line 1. The "**" markers are included in the width.
+        const words = clean.split(" ");
+        let line1 = words[0];
+        let i = 1;
+        let wrappedBy = null;
+        for (; i < words.length; i++) {
+          const cand = `${line1} ${words[i]}`;
+          const isLast = i === words.length - 1;
+          if (cand.length > maxChars) {
+            wrappedBy = "limit";
+            break;
+          }
+          if (inkW(`**${cand}${isLast ? "**" : ""}`) > avail1) {
+            wrappedBy = "width";
+            break;
+          }
+          line1 = cand;
+        }
+        const line2 = words.slice(i).join(" ");
+
+        // Security markers are applied here, in one place only
+        const s1 = line2 ? `**${line1}` : `**${line1}**`;
+        const s2 = line2 ? `${line2}**` : "";
+
+        // Shrink only as a last resort (e.g. line 2 or one very long word does not fit)
+        const w1 = inkW(s1);
+        const w2 = s2 ? inkW(s2) : 0;
+        const fitRatio = Math.min(
+          w1 > 0 ? avail1 / w1 : Infinity,
+          w2 > 0 ? avail2 / w2 : Infinity,
+        ); // above 1 means there is room to spare
+        const shrink = Math.min(1, fitRatio);
+        size *= shrink;
+
+        const k = size / 100;
+        const capH = capH100 * k;
+        const xFor = (s, left) => {
+          const m = measureText100(s, cfg.fontFamily, cfg.fontWeight);
+          return left + nudgeX + m.actualBoundingBoxLeft * k; // ink starts exactly at `left`
+        };
+        const y1 = lineTop + nudgeY - thick / 2 - gapAbove;
+        const y2 =
+          cfg.line2Top !== undefined
+            ? num(cfg.line2Top, 0) + nudgeY - thick / 2 - gapAbove
+            : lineTop + nudgeY + thick / 2 + gapBelow + capH;
+
+        return {
+          size,
+          shrink,
+          wrappedBy,
+          maxTextHeight: Number.isFinite(fitRatio)
+            ? textHeight * fitRatio
+            : null,
+          rows: [
+            { text: s1, x: xFor(s1, left1), y: y1 },
+            ...(s2 ? [{ text: s2, x: xFor(s2, left2), y: y2 }] : []),
+          ],
+        };
+      }
+
+      // Draws text laid out by layoutBaselineLines on the real-size SVG.
+      // In the preview it also shows guides for the printed line(s) and a clickable area.
+      function BaselineLinesText({
+        layout,
+        cfg,
+        cheque,
+        color,
+        preview,
+        active,
+        onClick,
+      }) {
+        const num = (v, d) =>
+          v === undefined || v === null || v === "" || isNaN(Number(v))
+            ? d
+            : Number(v);
+        const lineTop = num(cfg.lineTop, 0);
+        const thick = num(cfg.lineThickness, 0.5);
+        const left1 = num(cfg.textLeft, 0);
+        const left2 = num(cfg.line2Left, left1);
+        const right1 = cheque.width - num(cfg.textRight, 0);
+        const right2 =
+          cheque.width - num(cfg.textRight2, num(cfg.textRight, 0));
+        const hasLine2 = cfg.line2Top !== undefined;
+        const line2Top = num(cfg.line2Top, 0);
+        const th = num(cfg.textHeight, 2.5);
+
+        const hitLeft = Math.min(left1, left2);
+        const hitRight = Math.max(right1, right2);
+        const hitTop = lineTop - thick / 2 - num(cfg.gapAbove, 1) - th - 1;
+        const hitBottom = hasLine2
+          ? line2Top + thick / 2 + 1
+          : lineTop + thick / 2 + num(cfg.gapBelow, 1) + th + 1.5;
+
+        const guideColor = active ? "#f59e0b" : "rgba(100,116,139,0.6)";
+
+        return (
+          <svg
+            viewBox={`0 0 ${cheque.width} ${cheque.height}`}
+            width={`${cheque.width}mm`}
+            height={`${cheque.height}mm`}
+            style={{
+              position: "absolute",
+              left: `${PRINT_CANVAS.width - cheque.width}mm`,
+              top: `${(PRINT_CANVAS.height - cheque.height) / 2}mm`,
+              overflow: "visible",
+              pointerEvents: "none",
+            }}
+          >
+            {preview && (
+              <g
+                onClick={onClick}
+                style={{ cursor: "pointer" }}
+                pointerEvents="all"
+              >
+                <rect
+                  x={hitLeft}
+                  y={hitTop}
+                  width={Math.max(hitRight - hitLeft, 0)}
+                  height={hitBottom - hitTop}
+                  fill={active ? "rgba(245,158,11,0.12)" : "transparent"}
+                  stroke={active ? "#f59e0b" : "rgba(100,116,139,0.3)"}
+                  strokeWidth="0.15"
+                  strokeDasharray="1 1"
+                />
+                <line
+                  x1={left1}
+                  x2={right1}
+                  y1={lineTop}
+                  y2={lineTop}
+                  stroke={guideColor}
+                  strokeWidth={thick}
+                  strokeDasharray="1 1"
+                  opacity="0.6"
+                />
+                {hasLine2 && (
+                  <line
+                    x1={left2}
+                    x2={right2}
+                    y1={line2Top}
+                    y2={line2Top}
+                    stroke={guideColor}
+                    strokeWidth={thick}
+                    strokeDasharray="1 1"
+                    opacity="0.6"
+                  />
+                )}
+              </g>
+            )}
+            {layout.rows.map((row, i) => (
+              <text
+                key={i}
+                x={row.x}
+                y={row.y}
+                fontSize={layout.size}
+                fontFamily={cfg.fontFamily}
+                fontWeight={cfg.fontWeight || "normal"}
+                fill={color}
+              >
+                {row.text}
+              </text>
+            ))}
+          </svg>
+        );
       }
 
       // Largest Font Size share (0-1) at which `text` still fits the box width without shrinking
@@ -1783,6 +2020,50 @@
         const payeeLines = addSecurityMarkers(
           wrapTextToTwoLines((payeeName || "").trim(), maxPayeeLine1Chars),
         );
+        // Payee on the printed-line layout (banks without lineTop keep the old rendering)
+        const usePayeeSvg =
+          fields.payee?.lineTop !== undefined && !!fields.cheque;
+        const payeeLayout = usePayeeSvg
+          ? layoutBaselineLines(
+              payeeName,
+              fields.payee,
+              maxPayeeLine1Chars,
+              fields.cheque.width,
+            )
+          : null;
+        // The preview shows a placeholder when the name is empty; print prints nothing
+        const payeePreviewLayout =
+          usePayeeSvg && payeeLayout.rows.length === 0
+            ? layoutBaselineLines(
+                "[Payee Name]",
+                fields.payee,
+                maxPayeeLine1Chars,
+                fields.cheque.width,
+              )
+            : payeeLayout;
+        const payeeSvgMode =
+          activeFieldKey === "payee" && fields.payee?.lineTop !== undefined;
+        // Amount in words on the printed-line layout (banks without lineTop keep the old rendering)
+        const useWordsSvg =
+          fields.amountWords?.lineTop !== undefined && !!fields.cheque;
+        const wordsLayout = useWordsSvg
+          ? layoutBaselineLines(
+              generatedWords,
+              fields.amountWords,
+              maxLine1Chars,
+              fields.cheque.width,
+            )
+          : null;
+        // The preview shows a placeholder when there is no amount; print prints nothing
+        const wordsPreviewLayout =
+          useWordsSvg && wordsLayout.rows.length === 0
+            ? layoutBaselineLines(
+                "[Amount in words]",
+                fields.amountWords,
+                maxLine1Chars,
+                fields.cheque.width,
+              )
+            : wordsLayout;
         const rawSplitDateArray = formatSplitDate(chequeDate);
 
         return (
@@ -1989,8 +2270,8 @@
                           label="Payee Line 1 Limit"
                           value={maxPayeeLine1Chars}
                           onChange={setMaxPayeeLine1Chars}
-                          min={20}
-                          max={100}
+                          min={50}
+                          max={250}
                           disabled={showVerifyToast}
                         />
                       </div>
@@ -2067,8 +2348,8 @@
                         label="Line 1 Word Limit"
                         value={maxLine1Chars}
                         onChange={setMaxLine1Chars}
-                        min={30}
-                        max={150}
+                        min={50}
+                        max={250}
                         disabled={showVerifyToast}
                       />
                     </div>
@@ -2109,7 +2390,82 @@
 
                       {/* Advanced Position and Dimension Calibration Grid */}
                       <div className="grid grid-cols-2 gap-3 pt-2 select-none">
-                        {boxFieldKey ? (
+                        {payeeSvgMode ? (
+                          <React.Fragment>
+                            {[
+                              ["lineTop", "Printed Line From Top (mm)", "0.5"],
+                              [
+                                "lineThickness",
+                                "Printed Line Thickness (mm)",
+                                "0.1",
+                              ],
+                              ["textLeft", "Text Starts From Left (mm)", "0.5"],
+                              ["textRight", "Text Ends From Right (mm)", "0.5"],
+                              [
+                                "line2Left",
+                                "Line 2 Starts From Left (mm)",
+                                "0.5",
+                              ],
+                              ["textHeight", "Letter Height (mm)", "0.1"],
+                              ["gapAbove", "Gap Above Line (mm)", "0.1"],
+                              ["gapBelow", "Gap Below Line (mm)", "0.1"],
+                              ["nudgeX", "Move Right (mm, - = left)", "0.1"],
+                              ["nudgeY", "Move Down (mm, - = up)", "0.1"],
+                            ].map(([prop, label, step]) => {
+                              const isHeight = prop === "textHeight";
+                              const shrunk =
+                                isHeight &&
+                                payeeLayout &&
+                                payeeLayout.shrink < 0.999;
+                              return (
+                                <div key={prop}>
+                                  <label className="text-[11px] text-slate-400 block mb-1">
+                                    {label}
+                                  </label>
+                                  <NumberField
+                                    step={step}
+                                    value={fields.payee[prop] ?? 0}
+                                    onChange={(e) =>
+                                      updateFieldProperty(
+                                        "payee",
+                                        prop,
+                                        e.target.value,
+                                      )
+                                    }
+                                    disabled={showVerifyToast}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                                  />
+                                  {isHeight &&
+                                    payeeLayout?.maxTextHeight != null && (
+                                      <div
+                                        className={`mt-1 text-[10px] leading-tight ${
+                                          shrunk
+                                            ? "text-amber-400"
+                                            : "text-slate-500"
+                                        }`}
+                                      >
+                                        Max for this name:{" "}
+                                        {Math.floor(
+                                          payeeLayout.maxTextHeight * 10,
+                                        ) / 10}{" "}
+                                        mm
+                                        {shrunk ? " (shrunk to fit)" : ""}
+                                      </div>
+                                    )}
+                                </div>
+                              );
+                            })}
+                            <div className="col-span-2 text-[10px] text-slate-500 leading-tight">
+                              {payeeLayout && payeeLayout.rows.length > 1
+                                ? `Line 2 is used because of the ${
+                                    payeeLayout.wrappedBy === "limit"
+                                      ? "character limit"
+                                      : "available width"
+                                  }.`
+                                : "The name fits on one line."}
+                            </div>
+                          </React.Fragment>
+                        ) : boxFieldKey ? (
                           <React.Fragment>
                             {[
                               ["boxRight", "From Right Edge (mm)", "0.5"],
@@ -2128,6 +2484,7 @@
                                   : baseLabel;
                               const isSize = prop === "heightRatio";
                               const share = Number(cfg.heightRatio) || 0;
+                              // Determine the fit comparison matrix anchor based on the active box type
                               const fitHere = isDate ? fitDate : fitNow;
                               const shrunk =
                                 isSize &&
@@ -2327,8 +2684,8 @@
                             </div>
                           </React.Fragment>
                         )}
-                        {(activeFieldKey === "payee" ||
-                          activeFieldKey === "amountWords") && (
+                        {(activeFieldKey === "amountWords" ||
+                          (activeFieldKey === "payee" && !payeeSvgMode)) && (
                           <React.Fragment>
                             <div>
                               <label className="text-[11px] text-slate-400 block mb-1">
@@ -2819,28 +3176,54 @@
                               </div>
 
                               {/* Layer Element: Payee Name */}
-                              <WrappedFieldLines
-                                config={fields.payee}
-                                lines={payeeLines}
-                                color="#0f172a"
-                                preview
-                                active={activeFieldKey === "payee"}
-                                onClick={() => focusAndScrollToInput("payee")}
-                                placeholder="[Payee Name Placeholder]"
-                              />
+                              {usePayeeSvg ? (
+                                <BaselineLinesText
+                                  layout={payeePreviewLayout}
+                                  cfg={fields.payee}
+                                  cheque={fields.cheque}
+                                  color="#0f172a"
+                                  preview
+                                  active={activeFieldKey === "payee"}
+                                  onClick={() => focusAndScrollToInput("payee")}
+                                />
+                              ) : (
+                                <WrappedFieldLines
+                                  config={fields.payee}
+                                  lines={payeeLines}
+                                  color="#0f172a"
+                                  preview
+                                  active={activeFieldKey === "payee"}
+                                  onClick={() => focusAndScrollToInput("payee")}
+                                  placeholder="[Payee Name Placeholder]"
+                                />
+                              )}
 
-                              {/* Layer Element: Amount Words Line 1 */}
-                              <WrappedFieldLines
-                                config={fields.amountWords}
-                                lines={amountLines}
-                                color="#0f172a"
-                                preview
-                                active={activeFieldKey === "amountWords"}
-                                onClick={() =>
-                                  focusAndScrollToInput("amountWords")
-                                }
-                                placeholder="[Amount in words]"
-                              />
+                              {/* Layer Element: Amount Words */}
+                              {useWordsSvg ? (
+                                <BaselineLinesText
+                                  layout={wordsPreviewLayout}
+                                  cfg={fields.amountWords}
+                                  cheque={fields.cheque}
+                                  color="#0f172a"
+                                  preview
+                                  active={activeFieldKey === "amountWords"}
+                                  onClick={() =>
+                                    focusAndScrollToInput("amountWords")
+                                  }
+                                />
+                              ) : (
+                                <WrappedFieldLines
+                                  config={fields.amountWords}
+                                  lines={amountLines}
+                                  color="#0f172a"
+                                  preview
+                                  active={activeFieldKey === "amountWords"}
+                                  onClick={() =>
+                                    focusAndScrollToInput("amountWords")
+                                  }
+                                  placeholder="[Amount in words]"
+                                />
+                              )}
 
                               {/* Layer Element: Numeric Amount Value */}
                               {fields.amountNumeric.boxWidth !== undefined &&
@@ -3004,18 +3387,36 @@
                   </div>
 
                   {/* Payee Target Text */}
-                  <WrappedFieldLines
-                    config={fields.payee}
-                    lines={payeeLines}
-                    color="#000000"
-                  />
+                  {usePayeeSvg ? (
+                    <BaselineLinesText
+                      layout={payeeLayout}
+                      cfg={fields.payee}
+                      cheque={fields.cheque}
+                      color="#000000"
+                    />
+                  ) : (
+                    <WrappedFieldLines
+                      config={fields.payee}
+                      lines={payeeLines}
+                      color="#000000"
+                    />
+                  )}
 
-                  {/* Tokenized Words Line 1 */}
-                  <WrappedFieldLines
-                    config={fields.amountWords}
-                    lines={amountLines}
-                    color="#000000"
-                  />
+                  {/* Tokenized Words */}
+                  {useWordsSvg ? (
+                    <BaselineLinesText
+                      layout={wordsLayout}
+                      cfg={fields.amountWords}
+                      cheque={fields.cheque}
+                      color="#000000"
+                    />
+                  ) : (
+                    <WrappedFieldLines
+                      config={fields.amountWords}
+                      lines={amountLines}
+                      color="#000000"
+                    />
+                  )}
 
                   {/* Cross Secured Numeric Amount Layout Line */}
                   {fields.amountNumeric.boxWidth !== undefined &&
