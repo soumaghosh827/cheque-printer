@@ -415,8 +415,15 @@
               letterSpacing: 0,
             },
             amountNumeric: {
-              top: 34,
+              top: 34.0,
               left: 155.5,
+              boxRight: 7.5,
+              boxTop: 36,
+              boxWidth: 38,
+              boxHeight: 8.5,
+              heightRatio: 0.6,
+              nudgeX: 0,
+              nudgeY: 0,
               fontSize: 3.5,
               fontFamily: "Consolas",
               fontWeight: "normal",
@@ -431,6 +438,7 @@
               letterSpacing: 3.1,
             },
             all: { fontFamily: "Arial" },
+            cheque: { width: 204, height: 92.5 },
           },
         },
         indusind: {
@@ -785,11 +793,132 @@
         );
       }
 
+      // ---- Box-based SVG text (font-proof positioning) ----
+      let measureCtx = null;
+      // Measures text at a 100px reference size, using the same font the SVG will use
+      function measureText100(text, fontFamily, fontWeight) {
+        if (!measureCtx)
+          measureCtx = document.createElement("canvas").getContext("2d");
+        const family = String(fontFamily || "Arial");
+        measureCtx.font = `${fontWeight || "normal"} 100px ${
+          family.includes(",") ? family : `"${family}"`
+        }`;
+        return measureCtx.measureText(text);
+      }
+
+      // Sizes the text so its digits fill `heightRatio` of the box height, shrinks it if it is wider
+      // than the box, and returns the font size and baseline position in mm
+      // (measured from the cheque's top-left corner)
+      function layoutBoxText(text, cfg, chequeWidth) {
+        const boxW = Number(cfg.boxWidth);
+        const boxH = Number(cfg.boxHeight);
+        const zero = measureText100("0", cfg.fontFamily, cfg.fontWeight);
+        const asc = zero.actualBoundingBoxAscent;
+        const desc = zero.actualBoundingBoxDescent;
+        if (!(asc + desc > 0)) return null;
+
+        let size =
+          ((Number(cfg.heightRatio) || 0.6) * boxH * 100) / (asc + desc);
+        const m = measureText100(text, cfg.fontFamily, cfg.fontWeight);
+        const inkLeft = -m.actualBoundingBoxLeft;
+        const inkRight = m.actualBoundingBoxRight;
+        const inkWidth = ((inkRight - inkLeft) * size) / 100;
+        if (inkWidth > boxW) size *= boxW / inkWidth; // shrink to fit
+
+        const k = size / 100;
+        const centreX =
+          chequeWidth -
+          Number(cfg.boxRight) -
+          boxW / 2 +
+          (Number(cfg.nudgeX) || 0);
+        const centreY =
+          Number(cfg.boxTop) + boxH / 2 + (Number(cfg.nudgeY) || 0);
+        return {
+          size,
+          x: centreX - ((inkLeft + inkRight) / 2) * k, // centres the visible ink, not the advance width
+          y: centreY + ((asc - desc) / 2) * k, // centres the digit height on the box
+        };
+      }
+
+      // Largest Font Size share (0-1) at which `text` still fits the box width without shrinking
+      function maxFitRatio(text, cfg) {
+        if (!text) return null;
+        const zero = measureText100("0", cfg.fontFamily, cfg.fontWeight);
+        const m = measureText100(text, cfg.fontFamily, cfg.fontWeight);
+        const digitH =
+          zero.actualBoundingBoxAscent + zero.actualBoundingBoxDescent;
+        const inkW = m.actualBoundingBoxRight + m.actualBoundingBoxLeft;
+        if (!(digitH > 0) || !(inkW > 0)) return null;
+        const ratio =
+          (digitH * Number(cfg.boxWidth)) / (inkW * Number(cfg.boxHeight));
+        return Math.min(ratio, 1);
+      }
+
+      const PRINT_CANVAS = { width: 203, height: 89 }; // must match .cheque-canvas-print in the print CSS
+
+      // Draws one text centred in a box, on an SVG as large as the real cheque.
+      // Anchored to the canvas's right edge and vertical centre, like the cheque feed.
+      function BoxCenteredText({
+        text,
+        cfg,
+        cheque,
+        color,
+        preview,
+        active,
+        onClick,
+      }) {
+        const layout = text ? layoutBoxText(text, cfg, cheque.width) : null;
+        const boxLeft =
+          cheque.width - Number(cfg.boxRight) - Number(cfg.boxWidth);
+        return (
+          <svg
+            viewBox={`0 0 ${cheque.width} ${cheque.height}`}
+            width={`${cheque.width}mm`}
+            height={`${cheque.height}mm`}
+            style={{
+              position: "absolute",
+              left: `${PRINT_CANVAS.width - cheque.width}mm`,
+              top: `${(PRINT_CANVAS.height - cheque.height) / 2}mm`,
+              overflow: "visible",
+              pointerEvents: "none",
+            }}
+          >
+            {preview && (
+              <rect
+                x={boxLeft}
+                y={Number(cfg.boxTop)}
+                width={Number(cfg.boxWidth)}
+                height={Number(cfg.boxHeight)}
+                fill={active ? "rgba(245,158,11,0.12)" : "transparent"}
+                stroke={active ? "#f59e0b" : "rgba(100,116,139,0.5)"}
+                strokeWidth="0.15"
+                strokeDasharray="1 1"
+                style={{ cursor: "pointer" }}
+                onClick={onClick}
+                pointerEvents="all"
+              />
+            )}
+            {layout && (
+              <text
+                x={layout.x}
+                y={layout.y}
+                fontSize={layout.size}
+                fontFamily={cfg.fontFamily}
+                fontWeight={cfg.fontWeight || "normal"}
+                fill={color}
+              >
+                {text}
+              </text>
+            )}
+          </svg>
+        );
+      }
+
       function App() {
         // STATES START HERE --------------------------------------------------------------
 
         // Document States
-        const [selectedBank, setSelectedBank] = useState("axis");
+        const [selectedBank, setSelectedBank] = useState("icici");
         const [payeeName, setPayeeName] = useState("John Doe");
         const [amount, setAmount] = useState("456789957");
         const [chequeDate, setChequeDate] = useState(
@@ -799,7 +928,7 @@
         // console.log("Date -> ", new Date().toISOString().split("T")[0]);
 
         // Configuration Layout Positioning Matrices
-        const [fields, setFields] = useState(DEFAULT_PRESETS.axis.fields);
+        const [fields, setFields] = useState(DEFAULT_PRESETS.icici.fields);
         const [activeFieldKey, setActiveFieldKey] = useState("payee");
 
         const [printHistory, setPrintHistory] = useState(
@@ -1477,6 +1606,17 @@
         const generatedWords = convertAmountToIndianWords(amount);
         const splitLines = wrapTextToTwoLines(generatedWords, maxLine1Chars);
         const amountLines = addSecurityMarkers(splitLines);
+        const amountBoxMode = fields.amountNumeric?.boxWidth !== undefined;
+        // Max Font Size (as a fraction of box height) before the amount gets shrunk to fit
+        const fitNow = amountBoxMode
+          ? maxFitRatio(formatChequeAmount(amount), fields.amountNumeric)
+          : null;
+        const fitLongest = amountBoxMode
+          ? maxFitRatio(
+              formatChequeAmount("99999999999.99"),
+              fields.amountNumeric,
+            )
+          : null;
         const payeeLines = addSecurityMarkers(
           wrapTextToTwoLines((payeeName || "").trim(), maxPayeeLine1Chars),
         );
@@ -1806,134 +1946,216 @@
 
                       {/* Advanced Position and Dimension Calibration Grid */}
                       <div className="grid grid-cols-2 gap-3 pt-2 select-none">
-                        <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">
-                            Top Position (mm)
-                          </label>
-                          <NumberField
-                            step="0.5"
-                            value={
-                              activeFieldKey === "all"
-                                ? globalOffset.top
-                                : fields[activeFieldKey]?.top || 0
-                            }
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              if (activeFieldKey === "all") {
-                                setGlobalOffset((prev) => ({
-                                  ...prev,
-                                  top: val,
-                                }));
-                              } else {
-                                updateFieldProperty(activeFieldKey, "top", val);
-                              }
-                            }}
-                            disabled={showVerifyToast}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">
-                            Left Position (mm)
-                          </label>
-                          <NumberField
-                            step="0.5"
-                            value={
-                              activeFieldKey === "all"
-                                ? globalOffset.left
-                                : fields[activeFieldKey]?.left || 0
-                            }
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              if (activeFieldKey === "all") {
-                                setGlobalOffset((prev) => ({
-                                  ...prev,
-                                  left: val,
-                                }));
-                              } else {
-                                updateFieldProperty(
-                                  activeFieldKey,
-                                  "left",
-                                  val,
-                                );
-                              }
-                            }}
-                            disabled={showVerifyToast}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">
-                            Font Size (mm)
-                          </label>
-                          <NumberField
-                            step="0.1"
-                            value={
-                              activeFieldKey === "all"
-                                ? ""
-                                : fields[activeFieldKey]?.fontSize || ""
-                            }
-                            onChange={(e) =>
-                              activeFieldKey !== "all" &&
-                              updateFieldProperty(
-                                activeFieldKey,
-                                "fontSize",
-                                e.target.value,
-                              )
-                            }
-                            disabled={
-                              activeFieldKey === "all" || showVerifyToast
-                            }
-                            placeholder={activeFieldKey === "all" ? "N/A" : ""}
-                            className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none ${activeFieldKey === "all" ? "text-slate-600 cursor-not-allowed" : "text-emerald-400"}`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">
-                            {activeFieldKey === "acPayee"
-                              ? "Crossing Width (mm)"
-                              : "Letter Spacing (mm)"}
-                          </label>
-                          <NumberField
-                            step={activeFieldKey === "acPayee" ? "1.0" : "0.1"}
-                            value={
-                              activeFieldKey === "date"
-                                ? fields.date.letterSpacing
-                                : activeFieldKey === "acPayee"
-                                  ? fields.acPayee.width
-                                  : ""
-                            }
-                            onChange={(e) => {
-                              if (activeFieldKey === "date") {
-                                updateFieldProperty(
-                                  "date",
-                                  "letterSpacing",
-                                  e.target.value,
-                                );
-                              } else if (activeFieldKey === "acPayee") {
-                                updateFieldProperty(
-                                  "acPayee",
-                                  "width",
-                                  e.target.value,
-                                );
-                              }
-                            }}
-                            disabled={
-                              (activeFieldKey !== "date" &&
-                                activeFieldKey !== "acPayee") ||
-                              showVerifyToast
-                            }
-                            placeholder={
-                              activeFieldKey !== "date" &&
-                              activeFieldKey !== "acPayee"
-                                ? "N/A"
-                                : ""
-                            }
-                            className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none 
+                        {activeFieldKey === "amountNumeric" && amountBoxMode ? (
+                          <React.Fragment>
+                            {[
+                              ["boxRight", "From Right Edge (mm)", "0.5"],
+                              ["boxTop", "From Top Edge (mm)", "0.5"],
+                              ["boxWidth", "Width (mm)", "0.5"],
+                              ["boxHeight", "Height (mm)", "0.5"],
+                              ["heightRatio", "Font Size (% of height)", "1"],
+                              ["nudgeX", "Move Horizontally", "0.1"],
+                              ["nudgeY", "Move Vertically", "0.1"],
+                            ].map(([prop, label, step]) => {
+                              const isSize = prop === "heightRatio";
+                              const share =
+                                Number(fields.amountNumeric.heightRatio) || 0;
+                              const shrunk =
+                                isSize &&
+                                fitNow !== null &&
+                                share > fitNow + 0.0005;
+                              return (
+                                <div key={prop}>
+                                  <label className="text-[11px] text-slate-400 block mb-1">
+                                    {label}
+                                  </label>
+                                  <NumberField
+                                    step={step}
+                                    min={isSize ? 5 : undefined}
+                                    max={isSize ? 100 : undefined}
+                                    value={
+                                      isSize
+                                        ? Number((share * 100).toFixed(1))
+                                        : fields.amountNumeric[prop]
+                                    }
+                                    onChange={(e) =>
+                                      updateFieldProperty(
+                                        "amountNumeric",
+                                        prop,
+                                        isSize
+                                          ? parseFloat(e.target.value) / 100
+                                          : e.target.value,
+                                      )
+                                    }
+                                    disabled={showVerifyToast}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                                  />
+                                  {isSize && (
+                                    <div className="mt-1 text-[10px] leading-tight space-y-0.5">
+                                      {fitNow !== null && (
+                                        <div
+                                          className={
+                                            shrunk
+                                              ? "text-amber-400"
+                                              : "text-slate-500"
+                                          }
+                                        >
+                                          Max for this amount:{" "}
+                                          {Math.floor(fitNow * 1000) / 10}%
+                                          {shrunk ? " (shrunk to fit)" : ""}
+                                        </div>
+                                      )}
+                                      {fitLongest !== null && (
+                                        <div className="text-slate-500">
+                                          Max for longest amount:{" "}
+                                          {Math.floor(fitLongest * 1000) / 10}%
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Top Position (mm)
+                              </label>
+                              <NumberField
+                                step="0.5"
+                                value={
+                                  activeFieldKey === "all"
+                                    ? globalOffset.top
+                                    : fields[activeFieldKey]?.top || 0
+                                }
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  if (activeFieldKey === "all") {
+                                    setGlobalOffset((prev) => ({
+                                      ...prev,
+                                      top: val,
+                                    }));
+                                  } else {
+                                    updateFieldProperty(
+                                      activeFieldKey,
+                                      "top",
+                                      val,
+                                    );
+                                  }
+                                }}
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Left Position (mm)
+                              </label>
+                              <NumberField
+                                step="0.5"
+                                value={
+                                  activeFieldKey === "all"
+                                    ? globalOffset.left
+                                    : fields[activeFieldKey]?.left || 0
+                                }
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  if (activeFieldKey === "all") {
+                                    setGlobalOffset((prev) => ({
+                                      ...prev,
+                                      left: val,
+                                    }));
+                                  } else {
+                                    updateFieldProperty(
+                                      activeFieldKey,
+                                      "left",
+                                      val,
+                                    );
+                                  }
+                                }}
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Font Size (mm)
+                              </label>
+                              <NumberField
+                                step="0.1"
+                                value={
+                                  activeFieldKey === "all"
+                                    ? ""
+                                    : fields[activeFieldKey]?.fontSize || ""
+                                }
+                                onChange={(e) =>
+                                  activeFieldKey !== "all" &&
+                                  updateFieldProperty(
+                                    activeFieldKey,
+                                    "fontSize",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={
+                                  activeFieldKey === "all" || showVerifyToast
+                                }
+                                placeholder={
+                                  activeFieldKey === "all" ? "N/A" : ""
+                                }
+                                className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none ${activeFieldKey === "all" ? "text-slate-600 cursor-not-allowed" : "text-emerald-400"}`}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                {activeFieldKey === "acPayee"
+                                  ? "Crossing Width (mm)"
+                                  : "Letter Spacing (mm)"}
+                              </label>
+                              <NumberField
+                                step={
+                                  activeFieldKey === "acPayee" ? "1.0" : "0.1"
+                                }
+                                value={
+                                  activeFieldKey === "date"
+                                    ? fields.date.letterSpacing
+                                    : activeFieldKey === "acPayee"
+                                      ? fields.acPayee.width
+                                      : ""
+                                }
+                                onChange={(e) => {
+                                  if (activeFieldKey === "date") {
+                                    updateFieldProperty(
+                                      "date",
+                                      "letterSpacing",
+                                      e.target.value,
+                                    );
+                                  } else if (activeFieldKey === "acPayee") {
+                                    updateFieldProperty(
+                                      "acPayee",
+                                      "width",
+                                      e.target.value,
+                                    );
+                                  }
+                                }}
+                                disabled={
+                                  (activeFieldKey !== "date" &&
+                                    activeFieldKey !== "acPayee") ||
+                                  showVerifyToast
+                                }
+                                placeholder={
+                                  activeFieldKey !== "date" &&
+                                  activeFieldKey !== "acPayee"
+                                    ? "N/A"
+                                    : ""
+                                }
+                                className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none 
                               ${activeFieldKey === "date" ? "text-purple-400" : activeFieldKey === "acPayee" ? "text-amber-400 border-amber-900/50" : "text-slate-600 cursor-not-allowed"}`}
-                          />
-                        </div>
-
+                              />
+                            </div>
+                          </React.Fragment>
+                        )}
                         {(activeFieldKey === "payee" ||
                           activeFieldKey === "amountWords") && (
                           <React.Fragment>
@@ -2045,6 +2267,9 @@
                         >
                           {/* Sans-Serif Group: Best for Payee Names and Numeric Fields */}
                           <optgroup label="Standard Sans-Serif (Modern)">
+                            <option value="Microsoft Himalaya">
+                              Microsoft Himalaya
+                            </option>
                             <option value="Arial">
                               Arial (Default Corporate)
                             </option>
@@ -2447,26 +2672,42 @@
                               />
 
                               {/* Layer Element: Numeric Amount Value */}
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: `${fields.amountNumeric.top}mm`,
-                                  left: `${fields.amountNumeric.left}mm`,
-                                  fontSize: `${fields.amountNumeric.fontSize}mm`,
-                                  fontFamily: fields.amountNumeric.fontFamily,
-                                  lineHeight: 1,
-                                  color: "#0f172a",
-                                  fontWeight:
-                                    fields.amountNumeric.fontWeight || "normal",
-                                  whiteSpace: "nowrap",
-                                }}
-                                className={`cursor-pointer p-0.5 rounded transition ${activeFieldKey === "amountNumeric" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
-                                onClick={() =>
-                                  focusAndScrollToInput("amountNumeric")
-                                }
-                              >
-                                {formatChequeAmount(amount)}
-                              </div>
+                              {fields.amountNumeric.boxWidth !== undefined &&
+                              fields.cheque ? (
+                                <BoxCenteredText
+                                  text={formatChequeAmount(amount)}
+                                  cfg={fields.amountNumeric}
+                                  cheque={fields.cheque}
+                                  color="#0f172a"
+                                  preview
+                                  active={activeFieldKey === "amountNumeric"}
+                                  onClick={() =>
+                                    focusAndScrollToInput("amountNumeric")
+                                  }
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: `${fields.amountNumeric.top}mm`,
+                                    left: `${fields.amountNumeric.left}mm`,
+                                    fontSize: `${fields.amountNumeric.fontSize}mm`,
+                                    fontFamily: fields.amountNumeric.fontFamily,
+                                    lineHeight: 1,
+                                    color: "#0f172a",
+                                    fontWeight:
+                                      fields.amountNumeric.fontWeight ||
+                                      "normal",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  className={`cursor-pointer p-0.5 rounded transition ${activeFieldKey === "amountNumeric" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
+                                  onClick={() =>
+                                    focusAndScrollToInput("amountNumeric")
+                                  }
+                                >
+                                  {formatChequeAmount(amount)}
+                                </div>
+                              )}
 
                               {/* Layer Element: Custom Split-box Date Characters Grid */}
                               <div
@@ -2593,22 +2834,32 @@
                   />
 
                   {/* Cross Secured Numeric Amount Layout Line */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: `${fields.amountNumeric.top}mm`,
-                      left: `${fields.amountNumeric.left}mm`,
-                      fontSize: `${fields.amountNumeric.fontSize}mm`,
-                      fontFamily: fields.amountNumeric.fontFamily,
-                      color: "#000000",
-                      fontWeight: fields.amountNumeric.fontWeight || "normal",
-                      lineHeight: 1,
-                      whiteSpace: "nowrap", // Guarantees zero line breaking rules on physical prints
-                      overflow: "visible",
-                    }}
-                  >
-                    {formatChequeAmount(amount)}
-                  </div>
+                  {fields.amountNumeric.boxWidth !== undefined &&
+                  fields.cheque ? (
+                    <BoxCenteredText
+                      text={formatChequeAmount(amount)}
+                      cfg={fields.amountNumeric}
+                      cheque={fields.cheque}
+                      color="#000000"
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: `${fields.amountNumeric.top}mm`,
+                        left: `${fields.amountNumeric.left}mm`,
+                        fontSize: `${fields.amountNumeric.fontSize}mm`,
+                        fontFamily: fields.amountNumeric.fontFamily,
+                        color: "#000000",
+                        fontWeight: fields.amountNumeric.fontWeight || "normal",
+                        lineHeight: 1,
+                        whiteSpace: "nowrap", // Guarantees zero line breaking rules on physical prints
+                        overflow: "visible",
+                      }}
+                    >
+                      {formatChequeAmount(amount)}
+                    </div>
+                  )}
 
                   {/* Split Space Date Sequences */}
                   <div
