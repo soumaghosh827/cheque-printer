@@ -395,7 +395,7 @@
               angle: -45,
             },
             payee: {
-              top: 19.5,
+              top: 20,
               left: 5,
               line2Left: 5,
               lineGap: 4,
@@ -405,10 +405,10 @@
               letterSpacing: 0,
             },
             amountWords: {
-              top: 28,
+              top: 29,
               left: 12.5,
               line2Left: 0,
-              lineGap: 9.5,
+              lineGap: 9,
               fontSize: 3.5,
               fontFamily: "Arial",
               fontWeight: "normal",
@@ -417,11 +417,11 @@
             amountNumeric: {
               top: 34.0,
               left: 155.5,
-              boxRight: 7.5,
-              boxTop: 36,
+              boxRight: 9.5,
+              boxTop: 35,
               boxWidth: 38,
               boxHeight: 8.5,
-              heightRatio: 0.6,
+              heightRatio: 0.5,
               nudgeX: 0,
               nudgeY: 0,
               fontSize: 3.5,
@@ -432,8 +432,16 @@
             date: {
               top: 5,
               left: 153.5,
+              boxRight: 8,
+              boxTop: 7.5,
+              boxWidth: 42.5,
+              boxHeight: 5,
+              cells: 8,
+              heightRatio: 0.45,
+              nudgeX: 0,
+              nudgeY: 0,
               fontSize: 3.6,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
               letterSpacing: 3.1,
             },
@@ -854,6 +862,27 @@
         return Math.min(ratio, 1);
       }
 
+      // Largest Font Size share (0-1) at which the widest digit still fits 90% of a date cell
+      function maxFitRatioCells(cfg) {
+        const zero = measureText100("0", cfg.fontFamily, cfg.fontWeight);
+        const digitH =
+          zero.actualBoundingBoxAscent + zero.actualBoundingBoxDescent;
+        let widest = 0;
+        for (const d of "0123456789") {
+          const m = measureText100(d, cfg.fontFamily, cfg.fontWeight);
+          widest = Math.max(
+            widest,
+            m.actualBoundingBoxLeft + m.actualBoundingBoxRight,
+          );
+        }
+        if (!(digitH > 0) || !(widest > 0)) return null;
+        const cellW = Number(cfg.boxWidth) / (Number(cfg.cells) || 8);
+        return Math.min(
+          (digitH * cellW * 0.9) / (widest * Number(cfg.boxHeight)),
+          1,
+        );
+      }
+
       const PRINT_CANVAS = { width: 203, height: 89 }; // must match .cheque-canvas-print in the print CSS
 
       // Draws one text centred in a box, on an SVG as large as the real cheque.
@@ -910,6 +939,131 @@
                 {text}
               </text>
             )}
+          </svg>
+        );
+      }
+
+      // Splits the box into equal cells and returns each digit's position, centred in its cell
+      function layoutCells(chars, cfg, chequeWidth) {
+        const cells = Number(cfg.cells) || 8;
+        const cellW = Number(cfg.boxWidth) / cells;
+        const boxH = Number(cfg.boxHeight);
+        const zero = measureText100("0", cfg.fontFamily, cfg.fontWeight);
+        const asc = zero.actualBoundingBoxAscent;
+        const desc = zero.actualBoundingBoxDescent;
+        if (!(asc + desc > 0)) return null;
+
+        let size =
+          ((Number(cfg.heightRatio) || 0.6) * boxH * 100) / (asc + desc);
+
+        // Use the widest of 0-9 so the size never changes from one date to the next
+        let widest = 0;
+        for (const d of "0123456789") {
+          const m = measureText100(d, cfg.fontFamily, cfg.fontWeight);
+          widest = Math.max(
+            widest,
+            m.actualBoundingBoxLeft + m.actualBoundingBoxRight,
+          );
+        }
+        const limit = cellW * 0.9; // keep digits off the cell borders
+        if ((widest * size) / 100 > limit)
+          size *= limit / ((widest * size) / 100);
+
+        const k = size / 100;
+        const boxLeft =
+          chequeWidth - Number(cfg.boxRight) - Number(cfg.boxWidth);
+        const centreY =
+          Number(cfg.boxTop) + boxH / 2 + (Number(cfg.nudgeY) || 0);
+        const y = centreY + ((asc - desc) / 2) * k;
+
+        const digits = chars.slice(0, cells).map((ch, i) => {
+          if (!ch) return null;
+          const m = measureText100(ch, cfg.fontFamily, cfg.fontWeight);
+          const inkLeft = -m.actualBoundingBoxLeft;
+          const inkRight = m.actualBoundingBoxRight;
+          const cx = boxLeft + (i + 0.5) * cellW + (Number(cfg.nudgeX) || 0);
+          return { ch, x: cx - ((inkLeft + inkRight) / 2) * k };
+        });
+        return { size, y, digits };
+      }
+
+      // Draws the date: one digit per cell, each centred in its cell
+      function BoxCenteredCells({
+        chars,
+        cfg,
+        cheque,
+        color,
+        preview,
+        active,
+        onClick,
+      }) {
+        const layout = layoutCells(chars, cfg, cheque.width);
+        const cells = Number(cfg.cells) || 8;
+        const cellW = Number(cfg.boxWidth) / cells;
+        const boxLeft =
+          cheque.width - Number(cfg.boxRight) - Number(cfg.boxWidth);
+        const boxTop = Number(cfg.boxTop);
+        const boxH = Number(cfg.boxHeight);
+        return (
+          <svg
+            viewBox={`0 0 ${cheque.width} ${cheque.height}`}
+            width={`${cheque.width}mm`}
+            height={`${cheque.height}mm`}
+            style={{
+              position: "absolute",
+              left: `${PRINT_CANVAS.width - cheque.width}mm`,
+              top: `${(PRINT_CANVAS.height - cheque.height) / 2}mm`,
+              overflow: "visible",
+              pointerEvents: "none",
+            }}
+          >
+            {preview && (
+              <g
+                onClick={onClick}
+                style={{ cursor: "pointer" }}
+                pointerEvents="all"
+              >
+                <rect
+                  x={boxLeft}
+                  y={boxTop}
+                  width={Number(cfg.boxWidth)}
+                  height={boxH}
+                  fill={active ? "rgba(245,158,11,0.12)" : "transparent"}
+                  stroke={active ? "#f59e0b" : "rgba(100,116,139,0.5)"}
+                  strokeWidth="0.15"
+                  strokeDasharray="1 1"
+                />
+                {Array.from({ length: cells - 1 }, (_, i) => (
+                  <line
+                    key={i}
+                    x1={boxLeft + (i + 1) * cellW}
+                    x2={boxLeft + (i + 1) * cellW}
+                    y1={boxTop}
+                    y2={boxTop + boxH}
+                    stroke="rgba(100,116,139,0.35)"
+                    strokeWidth="0.1"
+                    strokeDasharray="1 1"
+                  />
+                ))}
+              </g>
+            )}
+            {layout &&
+              layout.digits.map(
+                (d, i) =>
+                  d && (
+                    <text
+                      key={i}
+                      x={d.x}
+                      y={layout.y}
+                      fontSize={layout.size}
+                      fontFamily={cfg.fontFamily}
+                      fontWeight={cfg.fontWeight || "normal"}
+                      fill={color}
+                    >
+                      {d.ch}
+                    </text>
+                  ),
+              )}
           </svg>
         );
       }
@@ -1617,6 +1771,15 @@
               fields.amountNumeric,
             )
           : null;
+        const boxFieldKey =
+          (activeFieldKey === "amountNumeric" || activeFieldKey === "date") &&
+          fields[activeFieldKey]?.boxWidth !== undefined
+            ? activeFieldKey
+            : null;
+        const fitDate =
+          fields.date?.boxWidth !== undefined
+            ? maxFitRatioCells(fields.date)
+            : null;
         const payeeLines = addSecurityMarkers(
           wrapTextToTwoLines((payeeName || "").trim(), maxPayeeLine1Chars),
         );
@@ -1946,7 +2109,7 @@
 
                       {/* Advanced Position and Dimension Calibration Grid */}
                       <div className="grid grid-cols-2 gap-3 pt-2 select-none">
-                        {activeFieldKey === "amountNumeric" && amountBoxMode ? (
+                        {boxFieldKey ? (
                           <React.Fragment>
                             {[
                               ["boxRight", "From Right Edge (mm)", "0.5"],
@@ -1954,16 +2117,22 @@
                               ["boxWidth", "Width (mm)", "0.5"],
                               ["boxHeight", "Height (mm)", "0.5"],
                               ["heightRatio", "Font Size (% of height)", "1"],
-                              ["nudgeX", "Move Horizontally", "0.1"],
-                              ["nudgeY", "Move Vertically", "0.1"],
-                            ].map(([prop, label, step]) => {
+                              ["nudgeX", "Move Right (mm, - = left)", "0.1"],
+                              ["nudgeY", "Move Down (mm, - = up)", "0.1"],
+                            ].map(([prop, baseLabel, step]) => {
+                              const cfg = fields[boxFieldKey];
+                              const isDate = boxFieldKey === "date";
+                              const label =
+                                isDate && prop === "boxWidth"
+                                  ? "Width (mm, whole row)"
+                                  : baseLabel;
                               const isSize = prop === "heightRatio";
-                              const share =
-                                Number(fields.amountNumeric.heightRatio) || 0;
+                              const share = Number(cfg.heightRatio) || 0;
+                              const fitHere = isDate ? fitDate : fitNow;
                               const shrunk =
                                 isSize &&
-                                fitNow !== null &&
-                                share > fitNow + 0.0005;
+                                fitHere !== null &&
+                                share > fitHere + 0.0005;
                               return (
                                 <div key={prop}>
                                   <label className="text-[11px] text-slate-400 block mb-1">
@@ -1976,11 +2145,11 @@
                                     value={
                                       isSize
                                         ? Number((share * 100).toFixed(1))
-                                        : fields.amountNumeric[prop]
+                                        : cfg[prop]
                                     }
                                     onChange={(e) =>
                                       updateFieldProperty(
-                                        "amountNumeric",
+                                        boxFieldKey,
                                         prop,
                                         isSize
                                           ? parseFloat(e.target.value) / 100
@@ -1992,7 +2161,7 @@
                                   />
                                   {isSize && (
                                     <div className="mt-1 text-[10px] leading-tight space-y-0.5">
-                                      {fitNow !== null && (
+                                      {fitHere !== null && (
                                         <div
                                           className={
                                             shrunk
@@ -2000,12 +2169,14 @@
                                               : "text-slate-500"
                                           }
                                         >
-                                          Max for this amount:{" "}
-                                          {Math.floor(fitNow * 1000) / 10}%
+                                          {isDate
+                                            ? "Max for this font"
+                                            : "Max for this amount"}
+                                          : {Math.floor(fitHere * 1000) / 10}%
                                           {shrunk ? " (shrunk to fit)" : ""}
                                         </div>
                                       )}
-                                      {fitLongest !== null && (
+                                      {!isDate && fitLongest !== null && (
                                         <div className="text-slate-500">
                                           Max for longest amount:{" "}
                                           {Math.floor(fitLongest * 1000) / 10}%
@@ -2710,39 +2881,52 @@
                               )}
 
                               {/* Layer Element: Custom Split-box Date Characters Grid */}
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: `${fields.date.top}mm`,
-                                  left: `${fields.date.left}mm`,
-                                  fontSize: `${fields.date.fontSize}mm`,
-                                  fontFamily: fields.date.fontFamily,
-                                  lineHeight: 1,
-                                  color: "#0f172a",
-                                  fontWeight:
-                                    fields.date.fontWeight || "normal",
-                                  display: "flex",
-                                  flexDirection: "row",
-                                }}
-                                className={`cursor-pointer p-0.5 rounded transition ${activeFieldKey === "date" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
-                                onClick={() => focusAndScrollToInput("date")}
-                              >
-                                {rawSplitDateArray.map((char, index) => (
-                                  <span
-                                    key={index}
-                                    style={{
-                                      marginRight:
-                                        index === 7
-                                          ? "0mm"
-                                          : `${fields.date.letterSpacing - 1.5}mm`,
-                                      width: "1.2ch",
-                                      textAlign: "center",
-                                    }}
-                                  >
-                                    {char || "•"}
-                                  </span>
-                                ))}
-                              </div>
+                              {fields.date.boxWidth !== undefined &&
+                              fields.cheque ? (
+                                <BoxCenteredCells
+                                  chars={rawSplitDateArray.map((c) => c || "•")}
+                                  cfg={fields.date}
+                                  cheque={fields.cheque}
+                                  color="#0f172a"
+                                  preview
+                                  active={activeFieldKey === "date"}
+                                  onClick={() => focusAndScrollToInput("date")}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: `${fields.date.top}mm`,
+                                    left: `${fields.date.left}mm`,
+                                    fontSize: `${fields.date.fontSize}mm`,
+                                    fontFamily: fields.date.fontFamily,
+                                    lineHeight: 1,
+                                    color: "#0f172a",
+                                    fontWeight:
+                                      fields.date.fontWeight || "normal",
+                                    display: "flex",
+                                    flexDirection: "row",
+                                  }}
+                                  className={`cursor-pointer p-0.5 rounded transition ${activeFieldKey === "date" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
+                                  onClick={() => focusAndScrollToInput("date")}
+                                >
+                                  {rawSplitDateArray.map((char, index) => (
+                                    <span
+                                      key={index}
+                                      style={{
+                                        marginRight:
+                                          index === 7
+                                            ? "0mm"
+                                            : `${fields.date.letterSpacing - 1.5}mm`,
+                                        width: "1.2ch",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      {char || "•"}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
 
                               <div className="absolute bottom-2 left-4 text-[9px] text-slate-500 font-mono select-none">
                                 {DEFAULT_PRESETS[selectedBank].name} Dimensions
@@ -2862,36 +3046,45 @@
                   )}
 
                   {/* Split Space Date Sequences */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: `${fields.date.top}mm`,
-                      left: `${fields.date.left}mm`,
-                      fontSize: `${fields.date.fontSize}mm`,
-                      fontFamily: fields.date.fontFamily,
-                      color: "#000000",
-                      fontWeight: fields.date.fontWeight || "normal",
-                      lineHeight: 1,
-                      display: "flex",
-                      flexDirection: "row",
-                    }}
-                  >
-                    {rawSplitDateArray.map((char, index) => (
-                      <span
-                        key={index}
-                        style={{
-                          marginRight:
-                            index === 7
-                              ? "0mm"
-                              : `${fields.date.letterSpacing}mm`,
-                          width: "1.2ch",
-                          textAlign: "center",
-                        }}
-                      >
-                        {char}
-                      </span>
-                    ))}
-                  </div>
+                  {fields.date.boxWidth !== undefined && fields.cheque ? (
+                    <BoxCenteredCells
+                      chars={rawSplitDateArray}
+                      cfg={fields.date}
+                      cheque={fields.cheque}
+                      color="#000000"
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: `${fields.date.top}mm`,
+                        left: `${fields.date.left}mm`,
+                        fontSize: `${fields.date.fontSize}mm`,
+                        fontFamily: fields.date.fontFamily,
+                        color: "#000000",
+                        fontWeight: fields.date.fontWeight || "normal",
+                        lineHeight: 1,
+                        display: "flex",
+                        flexDirection: "row",
+                      }}
+                    >
+                      {rawSplitDateArray.map((char, index) => (
+                        <span
+                          key={index}
+                          style={{
+                            marginRight:
+                              index === 7
+                                ? "0mm"
+                                : `${fields.date.letterSpacing}mm`,
+                            width: "1.2ch",
+                            textAlign: "center",
+                          }}
+                        >
+                          {char}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
