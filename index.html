@@ -1612,6 +1612,9 @@
         const amountRef = React.useRef(null);
         const dateRef = React.useRef(null);
         const settingsRef = React.useRef(null);
+        const focusTimerRef = React.useRef(null); // pending "scroll to the input" after a single click
+        const lastClickRef = React.useRef({ key: null, time: 0 }); // for double-click detection
+        const programmaticFocusRef = React.useRef(false); // true while the app itself moves the cursor
 
         // Unified Custom-Themed UI Authentication Processing Engine
         const handleAuthSubmit = () => {
@@ -1803,9 +1806,33 @@
           }
         };
 
-        // Unified cross-viewport router function to focus and scroll fields smoothly
+        // function to focus and auto-scroll to current field and switch current settings
         const focusAndScrollToInput = (fieldKey) => {
+          const now = Date.now();
+          const last = lastClickRef.current;
+          const isDouble = last.key === fieldKey && now - last.time < 350;
+          lastClickRef.current = { key: fieldKey, time: now };
+
+          // Select the field straight away, so the highlight is instant
           setActiveFieldKey(fieldKey);
+
+          // A newer click always replaces a pending jump
+          if (focusTimerRef.current) {
+            clearTimeout(focusTimerRef.current);
+            focusTimerRef.current = null;
+          }
+
+          // Double-click: go to the Settings panel instead of the input
+          if (isDouble) {
+            lastClickRef.current = { key: null, time: 0 };
+            if (settingsRef.current) {
+              settingsRef.current.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+              });
+            }
+            return;
+          }
 
           let targetRef = null;
           if (fieldKey === "payee") targetRef = payeeRef;
@@ -1814,18 +1841,24 @@
           if (fieldKey === "date") targetRef = dateRef;
           if (fieldKey === "all") targetRef = settingsRef;
 
-          if (targetRef && targetRef.current) {
-            targetRef.current.scrollIntoView({
-              behavior: "smooth",
-              block: "center",
-            });
-
-            // If it's a direct text input field, instantly place the text cursor inside it for the user
-            const inputElement =
-              targetRef.current.querySelector("input, select");
-            if (inputElement) {
-              setTimeout(() => inputElement.focus(), 300);
-            }
+          if (targetRef) {
+            // Single click: scroll to the input and place the cursor in it, after a short
+            // pause so a second click (double-click) can cancel it
+            focusTimerRef.current = setTimeout(() => {
+              focusTimerRef.current = null;
+              const box = targetRef.current;
+              if (!box) return;
+              box.scrollIntoView({ behavior: "smooth", block: "center" });
+              const inputElement = box.querySelector("input, select");
+              if (inputElement) {
+                programmaticFocusRef.current = true;
+                try {
+                  inputElement.focus({ preventScroll: true });
+                } finally {
+                  programmaticFocusRef.current = false;
+                }
+              }
+            }, 250);
           }
         };
 
