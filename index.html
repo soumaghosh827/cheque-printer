@@ -222,8 +222,8 @@
             "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=20",
           fields: {
             acPayee: {
-              top: 1.4,
-              left: -25,
+              top: -1.6,
+              left: -23,
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
@@ -232,42 +232,65 @@
               angle: -45,
             },
             payee: {
-              top: 17.5,
-              left: 5,
+              lineTop: 22,
+              lineThickness: 0.2,
+              textLeft: 5,
+              textRight: 70,
+              textRight2: 30,
               line2Left: 5,
-              lineGap: 4,
-              fontSize: 3.5,
+              textHeight: 2.5,
+              gapAbove: 1,
+              gapBelow: 1,
+              nudgeX: 0,
+              nudgeY: 0,
               fontFamily: "Arial",
               fontWeight: "normal",
               letterSpacing: 0,
             },
             amountWords: {
-              top: 26,
-              left: 20,
+              lineTop: 30.5,
+              line2Top: 39,
+              lineThickness: 0.2,
+              textLeft: 20,
               line2Left: 0,
-              lineGap: 9.5,
-              fontSize: 3.5,
+              textRight: 30,
+              textRight2: 80,
+              textHeight: 2.5,
+              gapAbove: 1,
+              gapBelow: 1,
+              nudgeX: 0,
+              nudgeY: 0,
               fontFamily: "Arial",
               fontWeight: "normal",
               letterSpacing: 0,
             },
             amountNumeric: {
-              top: 33,
-              left: 151,
-              fontSize: 3.5,
+              boxRight: 16,
+              boxTop: 32.75,
+              boxWidth: 38.5,
+              boxHeight: 8.5,
+              heightRatio: 0.6,
+              nudgeX: 0,
+              nudgeY: 0,
               fontFamily: "Consolas",
               fontWeight: "normal",
               letterSpacing: 0,
             },
             date: {
-              top: 3.5,
-              left: 149,
-              fontSize: 3.6,
+              boxRight: 12.32,
+              boxTop: 4.5,
+              boxWidth: 46.86,
+              boxHeight: 6,
+              cells: 8,
+              heightRatio: 0.5,
+              nudgeX: 0,
+              nudgeY: 0,
               fontFamily: "Consolas",
               fontWeight: "normal",
-              letterSpacing: 3.4,
+              letterSpacing: 0,
             },
             all: { fontFamily: "Arial" },
+            cheque: { width: 204, height: 94 },
           },
         },
         axis: {
@@ -385,8 +408,8 @@
           bgUrl: "https://example.com",
           fields: {
             acPayee: {
-              top: -2.4,
-              left: -23,
+              top: -1.4,
+              left: -24.5,
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
@@ -420,11 +443,7 @@
               nudgeY: 0,
             },
             amountWords: {
-              top: 29,
-              left: 12.5,
               line2Left: 0,
-              lineGap: 9,
-              fontSize: 3.5,
               fontFamily: "Arial",
               fontWeight: "normal",
               letterSpacing: 0,
@@ -1013,8 +1032,6 @@
           ? line2Top + thick / 2 + 1
           : lineTop + thick / 2 + num(cfg.gapBelow, 1) + th + 1.5;
 
-        const guideColor = active ? "#f59e0b" : "rgba(100,116,139,0.6)";
-
         return (
           <svg
             viewBox={`0 0 ${cheque.width} ${cheque.height}`}
@@ -1034,6 +1051,7 @@
                 style={{ cursor: "pointer" }}
                 pointerEvents="all"
               >
+                {/* Text area: the yellow dotted box stays as it is */}
                 <rect
                   x={hitLeft}
                   y={hitTop}
@@ -1044,28 +1062,66 @@
                   strokeWidth="0.15"
                   strokeDasharray="1 1"
                 />
-                <line
-                  x1={left1}
-                  x2={right1}
-                  y1={lineTop}
-                  y2={lineTop}
-                  stroke={guideColor}
-                  strokeWidth={thick}
-                  strokeDasharray="1 1"
-                  opacity="0.6"
-                />
-                {hasLine2 && (
-                  <line
-                    x1={left2}
-                    x2={right2}
-                    y1={line2Top}
-                    y2={line2Top}
-                    stroke={guideColor}
-                    strokeWidth={thick}
-                    strokeDasharray="1 1"
-                    opacity="0.6"
-                  />
-                )}
+                {/* The printed line(s) on the cheque: solid sky-blue rules with end ticks */}
+                {[
+                  {
+                    y: lineTop,
+                    l: left1,
+                    r: right1,
+                    label: hasLine2 ? "Words line 1" : "Payee line",
+                  },
+                  ...(hasLine2
+                    ? [
+                        {
+                          y: line2Top,
+                          l: left2,
+                          r: right2,
+                          label: "Words line 2",
+                        },
+                      ]
+                    : []),
+                ].map((ln, i) => {
+                  const c = active ? "#0284c7" : "#38bdf8";
+                  return (
+                    <g key={i} pointerEvents="none" opacity={active ? 1 : 0.8}>
+                      <line
+                        x1={ln.l}
+                        x2={ln.r}
+                        y1={ln.y}
+                        y2={ln.y}
+                        stroke={c}
+                        strokeWidth={Math.max(thick, 0.25)}
+                      />
+                      <line
+                        x1={ln.l}
+                        x2={ln.l}
+                        y1={ln.y - 1}
+                        y2={ln.y + 1}
+                        stroke={c}
+                        strokeWidth="0.2"
+                      />
+                      <line
+                        x1={ln.r}
+                        x2={ln.r}
+                        y1={ln.y - 1}
+                        y2={ln.y + 1}
+                        stroke={c}
+                        strokeWidth="0.2"
+                      />
+                      {active && (
+                        <text
+                          x={ln.r + 1}
+                          y={ln.y + 0.6}
+                          fontSize="1.8"
+                          fontFamily="system-ui, sans-serif"
+                          fill={c}
+                        >
+                          {ln.label}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
               </g>
             )}
             {layout.rows.map((row, i) => (
@@ -1302,6 +1358,82 @@
                   ),
               )}
           </svg>
+        );
+      }
+
+      // Sidebar controls for fields drawn on a printed line: [key, label, step]
+      const PAYEE_LINE_CONTROLS = [
+        ["lineThickness", "Printed line thickness (mm)", "0.1"],
+        ["textRight", "Text must end: from right edge (mm)", "0.5"],
+        ["line2Left", "Line 2 starts: from left edge (mm)", "0.5"],
+        ["gapAbove", "Text-to-line gap, above (mm)", "0.1"],
+        ["gapBelow", "Text-to-line gap, below (mm)", "0.1"],
+        ["nudgeX", "Fine-tune: move right (mm, - = left)", "0.1"],
+        ["nudgeY", "Fine-tune: move down (mm, - = up)", "0.1"],
+      ];
+      const WORDS_LINE_CONTROLS = [
+        ["lineThickness", "Printed line thickness (mm)", "0.1"],
+        ["textRight", "Line 1 must end: from right edge (mm)", "0.5"],
+        ["textRight2", "Line 2 must end: from right edge (mm)", "0.5"],
+        ["gapAbove", "Text-to-line gap (mm)", "0.1"],
+        ["nudgeX", "Fine-tune: move right (mm, - = left)", "0.1"],
+        ["nudgeY", "Fine-tune: move down (mm, - = up)", "0.1"],
+      ];
+
+      // Collapsible section, closed by default (used for the "Exact positions" settings)
+      function Collapsible({ title, children, defaultOpen = false }) {
+        const [open, setOpen] = React.useState(defaultOpen);
+        return (
+          <div className="col-span-2 border border-slate-800 rounded-lg bg-slate-950/40">
+            <button
+              type="button"
+              onClick={() => setOpen(!open)}
+              className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-slate-400 hover:text-slate-200 cursor-pointer select-none"
+            >
+              <span>{title}</span>
+              <span className="text-slate-500 text-sm leading-none">
+                {open ? "−" : "+"}
+              </span>
+            </button>
+            {open && (
+              <div className="grid grid-cols-2 gap-3 p-3 pt-1">{children}</div>
+            )}
+          </div>
+        );
+      }
+
+      // Label + number input + optional small hint underneath.
+      // Labels reserve two lines (tall) so inputs in the same row always line up.
+      function LabeledNumber({
+        label,
+        hint,
+        warn,
+        tall = true,
+        ...inputProps
+      }) {
+        return (
+          <div className="flex flex-col">
+            <label
+              className={`text-[11px] leading-tight text-slate-400 mb-1 ${
+                tall ? "min-h-[2rem] flex items-end" : ""
+              }`}
+            >
+              {label}
+            </label>
+            <NumberField
+              {...inputProps}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+            />
+            {hint && (
+              <div
+                className={`mt-1 text-[10px] leading-tight ${
+                  warn ? "text-amber-400" : "text-slate-500"
+                }`}
+              >
+                {hint}
+              </div>
+            )}
+          </div>
         );
       }
 
@@ -2041,8 +2173,7 @@
                 fields.cheque.width,
               )
             : payeeLayout;
-        const payeeSvgMode =
-          activeFieldKey === "payee" && fields.payee?.lineTop !== undefined;
+
         // Amount in words on the printed-line layout (banks without lineTop keep the old rendering)
         const useWordsSvg =
           fields.amountWords?.lineTop !== undefined && !!fields.cheque;
@@ -2064,7 +2195,144 @@
                 fields.cheque.width,
               )
             : wordsLayout;
+        const lineFieldKey =
+          (activeFieldKey === "payee" || activeFieldKey === "amountWords") &&
+          fields[activeFieldKey]?.lineTop !== undefined
+            ? activeFieldKey
+            : null;
+        const lineLayout =
+          lineFieldKey === "payee"
+            ? payeeLayout
+            : lineFieldKey === "amountWords"
+              ? wordsLayout
+              : null;
         const rawSplitDateArray = formatSplitDate(chequeDate);
+
+        // ---- Basics: Text size and the main position settings (always visible) ----
+        const boxH = Number(fields[boxFieldKey]?.boxHeight) || 1;
+        const fitHere = boxFieldKey === "date" ? fitDate : fitNow;
+        const mm1 = (v) => `${Math.floor(v * 10) / 10} mm`;
+
+        let basicSize = null;
+        if (lineFieldKey) {
+          const shrunk = !!lineLayout && lineLayout.shrink < 0.999;
+          basicSize = {
+            value: fields[lineFieldKey].textHeight ?? 0,
+            onChange: (e) =>
+              updateFieldProperty(lineFieldKey, "textHeight", e.target.value),
+            warn: shrunk,
+            hint: (
+              <React.Fragment>
+                {lineLayout?.maxTextHeight != null && (
+                  <div>
+                    Max for this text: {mm1(lineLayout.maxTextHeight)}
+                    {shrunk ? " (shrunk to fit)" : ""}
+                  </div>
+                )}
+                <div>
+                  {lineLayout && lineLayout.rows.length > 1
+                    ? `Line 2 is used because of the ${
+                        lineLayout.wrappedBy === "limit"
+                          ? "character limit"
+                          : "available width"
+                      }.`
+                    : "The text fits on one line."}
+                </div>
+              </React.Fragment>
+            ),
+          };
+        } else if (boxFieldKey) {
+          const share = Number(fields[boxFieldKey].heightRatio) || 0;
+          const shrunk = fitHere !== null && share > fitHere + 0.0005;
+          basicSize = {
+            value: Number((share * boxH).toFixed(2)), // digit height in mm
+            onChange: (e) =>
+              updateFieldProperty(
+                boxFieldKey,
+                "heightRatio",
+                Math.min(1, (parseFloat(e.target.value) || 0) / boxH),
+              ),
+            warn: shrunk,
+            hint: (
+              <React.Fragment>
+                {fitHere !== null && (
+                  <div>
+                    {boxFieldKey === "date"
+                      ? "Max for this font"
+                      : "Max for this amount"}
+                    : {mm1(fitHere * boxH)}
+                    {shrunk ? " (shrunk to fit)" : ""}
+                  </div>
+                )}
+                {boxFieldKey !== "date" && fitLongest !== null && (
+                  <div>Max for longest amount: {mm1(fitLongest * boxH)}</div>
+                )}
+              </React.Fragment>
+            ),
+          };
+        } else if (activeFieldKey !== "all") {
+          basicSize = {
+            value: fields[activeFieldKey]?.fontSize ?? 0,
+            onChange: (e) =>
+              updateFieldProperty(activeFieldKey, "fontSize", e.target.value),
+          };
+        }
+
+        const posField = (key, label) => ({
+          key,
+          label,
+          step: "0.5",
+          value: fields[activeFieldKey]?.[key] ?? 0,
+          onChange: (e) =>
+            updateFieldProperty(activeFieldKey, key, e.target.value),
+        });
+        const basicPos =
+          activeFieldKey === "all"
+            ? [
+                {
+                  key: "gl",
+                  label: "Move all right (mm, - = left)",
+                  step: "0.5",
+                  value: globalOffset.left,
+                  onChange: (e) =>
+                    setGlobalOffset((p) => ({
+                      ...p,
+                      left: parseFloat(e.target.value) || 0,
+                    })),
+                },
+                {
+                  key: "gt",
+                  label: "Move all down (mm, - = up)",
+                  step: "0.5",
+                  value: globalOffset.top,
+                  onChange: (e) =>
+                    setGlobalOffset((p) => ({
+                      ...p,
+                      top: parseFloat(e.target.value) || 0,
+                    })),
+                },
+              ]
+            : lineFieldKey === "payee"
+              ? [
+                  posField("textLeft", "Text starts: from left edge (mm)"),
+                  posField("lineTop", "Printed line: from top edge (mm)"),
+                ]
+              : lineFieldKey === "amountWords"
+                ? [
+                    posField("textLeft", "Line 1 text starts: from left (mm)"),
+                    posField("line2Left", "Line 2 text starts: from left (mm)"),
+                    posField("lineTop", "Line 1 printed line: from top (mm)"),
+                    posField("line2Top", "Line 2 printed line: from top (mm)"),
+                  ]
+                : boxFieldKey
+                  ? [
+                      posField("boxRight", "Box: from right edge (mm)"),
+                      posField("boxTop", "Box: from top edge (mm)"),
+                    ]
+                  : [
+                      posField("left", "Left (mm)"),
+                      posField("top", "Top (mm)"),
+                    ];
 
         return (
           <React.Fragment>
@@ -2338,8 +2606,8 @@
                         <span className="block text-[10px] text-slate-400 font-mono uppercase">
                           Amount in Words:
                         </span>
-                        <span className="text-xs text-amber-400 font-serif italic">
-                          {generatedWords}
+                        <span className="block mt-1 text-sm text-slate-200 leading-snug">
+                          {generatedWords || "—"}
                         </span>
                       </div>
 
@@ -2388,393 +2656,9 @@
                         </select>
                       </div>
 
-                      {/* Advanced Position and Dimension Calibration Grid */}
-                      <div className="grid grid-cols-2 gap-3 pt-2 select-none">
-                        {payeeSvgMode ? (
-                          <React.Fragment>
-                            {[
-                              ["lineTop", "Printed Line From Top (mm)", "0.5"],
-                              [
-                                "lineThickness",
-                                "Printed Line Thickness (mm)",
-                                "0.1",
-                              ],
-                              ["textLeft", "Text Starts From Left (mm)", "0.5"],
-                              ["textRight", "Text Ends From Right (mm)", "0.5"],
-                              [
-                                "line2Left",
-                                "Line 2 Starts From Left (mm)",
-                                "0.5",
-                              ],
-                              ["textHeight", "Letter Height (mm)", "0.1"],
-                              ["gapAbove", "Gap Above Line (mm)", "0.1"],
-                              ["gapBelow", "Gap Below Line (mm)", "0.1"],
-                              ["nudgeX", "Move Right (mm, - = left)", "0.1"],
-                              ["nudgeY", "Move Down (mm, - = up)", "0.1"],
-                            ].map(([prop, label, step]) => {
-                              const isHeight = prop === "textHeight";
-                              const shrunk =
-                                isHeight &&
-                                payeeLayout &&
-                                payeeLayout.shrink < 0.999;
-                              return (
-                                <div key={prop}>
-                                  <label className="text-[11px] text-slate-400 block mb-1">
-                                    {label}
-                                  </label>
-                                  <NumberField
-                                    step={step}
-                                    value={fields.payee[prop] ?? 0}
-                                    onChange={(e) =>
-                                      updateFieldProperty(
-                                        "payee",
-                                        prop,
-                                        e.target.value,
-                                      )
-                                    }
-                                    disabled={showVerifyToast}
-                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                                  />
-                                  {isHeight &&
-                                    payeeLayout?.maxTextHeight != null && (
-                                      <div
-                                        className={`mt-1 text-[10px] leading-tight ${
-                                          shrunk
-                                            ? "text-amber-400"
-                                            : "text-slate-500"
-                                        }`}
-                                      >
-                                        Max for this name:{" "}
-                                        {Math.floor(
-                                          payeeLayout.maxTextHeight * 10,
-                                        ) / 10}{" "}
-                                        mm
-                                        {shrunk ? " (shrunk to fit)" : ""}
-                                      </div>
-                                    )}
-                                </div>
-                              );
-                            })}
-                            <div className="col-span-2 text-[10px] text-slate-500 leading-tight">
-                              {payeeLayout && payeeLayout.rows.length > 1
-                                ? `Line 2 is used because of the ${
-                                    payeeLayout.wrappedBy === "limit"
-                                      ? "character limit"
-                                      : "available width"
-                                  }.`
-                                : "The name fits on one line."}
-                            </div>
-                          </React.Fragment>
-                        ) : boxFieldKey ? (
-                          <React.Fragment>
-                            {[
-                              ["boxRight", "From Right Edge (mm)", "0.5"],
-                              ["boxTop", "From Top Edge (mm)", "0.5"],
-                              ["boxWidth", "Width (mm)", "0.5"],
-                              ["boxHeight", "Height (mm)", "0.5"],
-                              ["heightRatio", "Font Size (% of height)", "1"],
-                              ["nudgeX", "Move Right (mm, - = left)", "0.1"],
-                              ["nudgeY", "Move Down (mm, - = up)", "0.1"],
-                            ].map(([prop, baseLabel, step]) => {
-                              const cfg = fields[boxFieldKey];
-                              const isDate = boxFieldKey === "date";
-                              const label =
-                                isDate && prop === "boxWidth"
-                                  ? "Width (mm, whole row)"
-                                  : baseLabel;
-                              const isSize = prop === "heightRatio";
-                              const share = Number(cfg.heightRatio) || 0;
-                              // Determine the fit comparison matrix anchor based on the active box type
-                              const fitHere = isDate ? fitDate : fitNow;
-                              const shrunk =
-                                isSize &&
-                                fitHere !== null &&
-                                share > fitHere + 0.0005;
-                              return (
-                                <div key={prop}>
-                                  <label className="text-[11px] text-slate-400 block mb-1">
-                                    {label}
-                                  </label>
-                                  <NumberField
-                                    step={step}
-                                    min={isSize ? 5 : undefined}
-                                    max={isSize ? 100 : undefined}
-                                    value={
-                                      isSize
-                                        ? Number((share * 100).toFixed(1))
-                                        : cfg[prop]
-                                    }
-                                    onChange={(e) =>
-                                      updateFieldProperty(
-                                        boxFieldKey,
-                                        prop,
-                                        isSize
-                                          ? parseFloat(e.target.value) / 100
-                                          : e.target.value,
-                                      )
-                                    }
-                                    disabled={showVerifyToast}
-                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                                  />
-                                  {isSize && (
-                                    <div className="mt-1 text-[10px] leading-tight space-y-0.5">
-                                      {fitHere !== null && (
-                                        <div
-                                          className={
-                                            shrunk
-                                              ? "text-amber-400"
-                                              : "text-slate-500"
-                                          }
-                                        >
-                                          {isDate
-                                            ? "Max for this font"
-                                            : "Max for this amount"}
-                                          : {Math.floor(fitHere * 1000) / 10}%
-                                          {shrunk ? " (shrunk to fit)" : ""}
-                                        </div>
-                                      )}
-                                      {!isDate && fitLongest !== null && (
-                                        <div className="text-slate-500">
-                                          Max for longest amount:{" "}
-                                          {Math.floor(fitLongest * 1000) / 10}%
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </React.Fragment>
-                        ) : (
-                          <React.Fragment>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                Top Position (mm)
-                              </label>
-                              <NumberField
-                                step="0.5"
-                                value={
-                                  activeFieldKey === "all"
-                                    ? globalOffset.top
-                                    : fields[activeFieldKey]?.top || 0
-                                }
-                                onChange={(e) => {
-                                  const val = parseFloat(e.target.value) || 0;
-                                  if (activeFieldKey === "all") {
-                                    setGlobalOffset((prev) => ({
-                                      ...prev,
-                                      top: val,
-                                    }));
-                                  } else {
-                                    updateFieldProperty(
-                                      activeFieldKey,
-                                      "top",
-                                      val,
-                                    );
-                                  }
-                                }}
-                                disabled={showVerifyToast}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                Left Position (mm)
-                              </label>
-                              <NumberField
-                                step="0.5"
-                                value={
-                                  activeFieldKey === "all"
-                                    ? globalOffset.left
-                                    : fields[activeFieldKey]?.left || 0
-                                }
-                                onChange={(e) => {
-                                  const val = parseFloat(e.target.value) || 0;
-                                  if (activeFieldKey === "all") {
-                                    setGlobalOffset((prev) => ({
-                                      ...prev,
-                                      left: val,
-                                    }));
-                                  } else {
-                                    updateFieldProperty(
-                                      activeFieldKey,
-                                      "left",
-                                      val,
-                                    );
-                                  }
-                                }}
-                                disabled={showVerifyToast}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                Font Size (mm)
-                              </label>
-                              <NumberField
-                                step="0.1"
-                                value={
-                                  activeFieldKey === "all"
-                                    ? ""
-                                    : fields[activeFieldKey]?.fontSize || ""
-                                }
-                                onChange={(e) =>
-                                  activeFieldKey !== "all" &&
-                                  updateFieldProperty(
-                                    activeFieldKey,
-                                    "fontSize",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={
-                                  activeFieldKey === "all" || showVerifyToast
-                                }
-                                placeholder={
-                                  activeFieldKey === "all" ? "N/A" : ""
-                                }
-                                className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none ${activeFieldKey === "all" ? "text-slate-600 cursor-not-allowed" : "text-emerald-400"}`}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                {activeFieldKey === "acPayee"
-                                  ? "Crossing Width (mm)"
-                                  : "Letter Spacing (mm)"}
-                              </label>
-                              <NumberField
-                                step={
-                                  activeFieldKey === "acPayee" ? "1.0" : "0.1"
-                                }
-                                value={
-                                  activeFieldKey === "date"
-                                    ? fields.date.letterSpacing
-                                    : activeFieldKey === "acPayee"
-                                      ? fields.acPayee.width
-                                      : ""
-                                }
-                                onChange={(e) => {
-                                  if (activeFieldKey === "date") {
-                                    updateFieldProperty(
-                                      "date",
-                                      "letterSpacing",
-                                      e.target.value,
-                                    );
-                                  } else if (activeFieldKey === "acPayee") {
-                                    updateFieldProperty(
-                                      "acPayee",
-                                      "width",
-                                      e.target.value,
-                                    );
-                                  }
-                                }}
-                                disabled={
-                                  (activeFieldKey !== "date" &&
-                                    activeFieldKey !== "acPayee") ||
-                                  showVerifyToast
-                                }
-                                placeholder={
-                                  activeFieldKey !== "date" &&
-                                  activeFieldKey !== "acPayee"
-                                    ? "N/A"
-                                    : ""
-                                }
-                                className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none 
-                              ${activeFieldKey === "date" ? "text-purple-400" : activeFieldKey === "acPayee" ? "text-amber-400 border-amber-900/50" : "text-slate-600 cursor-not-allowed"}`}
-                              />
-                            </div>
-                          </React.Fragment>
-                        )}
-                        {(activeFieldKey === "amountWords" ||
-                          (activeFieldKey === "payee" && !payeeSvgMode)) && (
-                          <React.Fragment>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                Line 2 Left (mm)
-                              </label>
-                              <NumberField
-                                step="0.5"
-                                value={fields[activeFieldKey]?.line2Left ?? 0}
-                                onChange={(e) =>
-                                  updateFieldProperty(
-                                    activeFieldKey,
-                                    "line2Left",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={showVerifyToast}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                Line Gap (mm)
-                              </label>
-                              <NumberField
-                                step="0.5"
-                                value={fields[activeFieldKey]?.lineGap ?? 0}
-                                onChange={(e) =>
-                                  updateFieldProperty(
-                                    activeFieldKey,
-                                    "lineGap",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={showVerifyToast}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
-                              />
-                            </div>
-                          </React.Fragment>
-                        )}
-
-                        {/* Configurable Secondary Controls Row Layer */}
-                        {activeFieldKey === "acPayee" && (
-                          <React.Fragment>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                Rotation Angle (deg)
-                              </label>
-                              <NumberField
-                                step="1"
-                                min="-90"
-                                max="90"
-                                value={fields.acPayee?.angle ?? -15}
-                                onChange={(e) =>
-                                  updateFieldProperty(
-                                    "acPayee",
-                                    "angle",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={showVerifyToast}
-                                className="w-full bg-slate-950 border border-amber-900/40 rounded-lg p-2 text-sm font-mono text-center text-amber-400 focus:outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] text-slate-400 block mb-1">
-                                Text Spacing (mm)
-                              </label>
-                              <NumberField
-                                step="0.1"
-                                min="0"
-                                value={fields.acPayee?.letterSpacing ?? 0.4}
-                                onChange={(e) =>
-                                  updateFieldProperty(
-                                    "acPayee",
-                                    "letterSpacing",
-                                    e.target.value,
-                                  )
-                                }
-                                disabled={showVerifyToast}
-                                className="w-full bg-slate-950 border border-amber-900/40 rounded-lg p-2 text-sm font-mono text-center text-purple-400 focus:outline-none"
-                              />
-                            </div>
-                          </React.Fragment>
-                        )}
-                      </div>
-
                       <div>
                         <label className="text-[11px] text-slate-400 block mb-1">
-                          Font Family Configuration
+                          Font
                         </label>
                         <select
                           value={
@@ -2894,6 +2778,236 @@
                           )}
                         </button>
                       </div>
+
+                      {/* Basics: the settings used most often */}
+                      <div className="grid grid-cols-2 gap-3 pt-2 select-none">
+                        {basicSize && (
+                          <div className="col-span-2">
+                            <LabeledNumber
+                              label="Text size (mm)"
+                              tall={false}
+                              step="0.1"
+                              value={basicSize.value}
+                              onChange={basicSize.onChange}
+                              hint={basicSize.hint}
+                              warn={basicSize.warn}
+                              disabled={showVerifyToast}
+                            />
+                          </div>
+                        )}
+                        {basicPos.map((p) => (
+                          <LabeledNumber
+                            key={p.key}
+                            label={p.label}
+                            step={p.step}
+                            value={p.value}
+                            onChange={p.onChange}
+                            disabled={showVerifyToast}
+                          />
+                        ))}
+                      </div>
+
+                      {/* Advanced Position and Dimension Calibration Grid */}
+                      <Collapsible title="Exact positions & spacing">
+                        {lineFieldKey ? (
+                          <React.Fragment>
+                            {(lineFieldKey === "amountWords"
+                              ? WORDS_LINE_CONTROLS
+                              : PAYEE_LINE_CONTROLS
+                            ).map(([prop, label, step]) => (
+                              <LabeledNumber
+                                key={prop}
+                                label={label}
+                                step={step}
+                                value={fields[lineFieldKey][prop] ?? 0}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    lineFieldKey,
+                                    prop,
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                              />
+                            ))}
+                          </React.Fragment>
+                        ) : boxFieldKey ? (
+                          <React.Fragment>
+                            {[
+                              [
+                                "boxWidth",
+                                boxFieldKey === "date"
+                                  ? "Box width: whole row (mm)"
+                                  : "Box width (mm)",
+                                "0.5",
+                              ],
+                              ["boxHeight", "Box height (mm)", "0.5"],
+                              [
+                                "nudgeX",
+                                "Fine-tune: move right (mm, - = left)",
+                                "0.1",
+                              ],
+                              [
+                                "nudgeY",
+                                "Fine-tune: move down (mm, - = up)",
+                                "0.1",
+                              ],
+                            ].map(([prop, label, step]) => (
+                              <LabeledNumber
+                                key={prop}
+                                label={label}
+                                step={step}
+                                value={fields[boxFieldKey][prop] ?? 0}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    boxFieldKey,
+                                    prop,
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                              />
+                            ))}
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                {activeFieldKey === "acPayee"
+                                  ? "Crossing Width (mm)"
+                                  : "Letter Spacing (mm)"}
+                              </label>
+                              <NumberField
+                                step={
+                                  activeFieldKey === "acPayee" ? "1.0" : "0.1"
+                                }
+                                value={
+                                  activeFieldKey === "date"
+                                    ? fields.date.letterSpacing
+                                    : activeFieldKey === "acPayee"
+                                      ? fields.acPayee.width
+                                      : ""
+                                }
+                                onChange={(e) => {
+                                  if (activeFieldKey === "date") {
+                                    updateFieldProperty(
+                                      "date",
+                                      "letterSpacing",
+                                      e.target.value,
+                                    );
+                                  } else if (activeFieldKey === "acPayee") {
+                                    updateFieldProperty(
+                                      "acPayee",
+                                      "width",
+                                      e.target.value,
+                                    );
+                                  }
+                                }}
+                                disabled={
+                                  (activeFieldKey !== "date" &&
+                                    activeFieldKey !== "acPayee") ||
+                                  showVerifyToast
+                                }
+                                placeholder={
+                                  activeFieldKey !== "date" &&
+                                  activeFieldKey !== "acPayee"
+                                    ? "N/A"
+                                    : ""
+                                }
+                                className={`w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center focus:outline-none 
+                              ${activeFieldKey === "date" ? "text-purple-400" : activeFieldKey === "acPayee" ? "text-amber-400 border-amber-900/50" : "text-slate-600 cursor-not-allowed"}`}
+                              />
+                            </div>
+                          </React.Fragment>
+                        )}
+                        {(activeFieldKey === "payee" ||
+                          activeFieldKey === "amountWords") &&
+                          !lineFieldKey && (
+                            <React.Fragment>
+                              <div>
+                                <label className="text-[11px] text-slate-400 block mb-1">
+                                  Line 2 Left (mm)
+                                </label>
+                                <NumberField
+                                  step="0.5"
+                                  value={fields[activeFieldKey]?.line2Left ?? 0}
+                                  onChange={(e) =>
+                                    updateFieldProperty(
+                                      activeFieldKey,
+                                      "line2Left",
+                                      e.target.value,
+                                    )
+                                  }
+                                  disabled={showVerifyToast}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[11px] text-slate-400 block mb-1">
+                                  Line Gap (mm)
+                                </label>
+                                <NumberField
+                                  step="0.5"
+                                  value={fields[activeFieldKey]?.lineGap ?? 0}
+                                  onChange={(e) =>
+                                    updateFieldProperty(
+                                      activeFieldKey,
+                                      "lineGap",
+                                      e.target.value,
+                                    )
+                                  }
+                                  disabled={showVerifyToast}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm font-mono text-center text-blue-400 focus:outline-none"
+                                />
+                              </div>
+                            </React.Fragment>
+                          )}
+
+                        {/* Configurable Secondary Controls Row Layer */}
+                        {activeFieldKey === "acPayee" && (
+                          <React.Fragment>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Rotation Angle (deg)
+                              </label>
+                              <NumberField
+                                step="1"
+                                min="-90"
+                                max="90"
+                                value={fields.acPayee?.angle ?? -15}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    "acPayee",
+                                    "angle",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-amber-900/40 rounded-lg p-2 text-sm font-mono text-center text-amber-400 focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-slate-400 block mb-1">
+                                Text Spacing (mm)
+                              </label>
+                              <NumberField
+                                step="0.1"
+                                min="0"
+                                value={fields.acPayee?.letterSpacing ?? 0.4}
+                                onChange={(e) =>
+                                  updateFieldProperty(
+                                    "acPayee",
+                                    "letterSpacing",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={showVerifyToast}
+                                className="w-full bg-slate-950 border border-amber-900/40 rounded-lg p-2 text-sm font-mono text-center text-purple-400 focus:outline-none"
+                              />
+                            </div>
+                          </React.Fragment>
+                        )}
+                      </Collapsible>
 
                       {/* SECTION: SYSTEM UTILITIES PANEL */}
                       <div className="border-t border-slate-800 pt-4 mt-auto space-y-4 shrink-0 select-none">
