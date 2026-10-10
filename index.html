@@ -213,6 +213,50 @@
 
       const BANK_KEYS = ["sbi", "axis", "hdfc", "icici", "indusind"];
 
+      // Master Application Configs
+      const DEFAULT_ZOOM_FACTOR = 1.4;
+      const PRINT_CANVAS = { width: 203, height: 89 }; // must match .cheque-canvas-print in the print CSS
+
+      // Sidebar controls for fields drawn on a printed line: [key, label, step]
+      const PAYEE_LINE_CONTROLS = [
+        ["lineThickness", "Printed line thickness (mm)", "0.1"],
+        ["textRight", "Text must end: from right edge (mm)", "0.5"],
+        ["line2Left", "Line 2 starts: from left edge (mm)", "0.5"],
+        ["gapAbove", "Text-to-line gap, above (mm)", "0.1"],
+        ["gapBelow", "Text-to-line gap, below (mm)", "0.1"],
+        ["nudgeX", "Fine-tune: move right (mm, - = left)", "0.1"],
+        ["nudgeY", "Fine-tune: move down (mm, - = up)", "0.1"],
+      ];
+      const WORDS_LINE_CONTROLS = [
+        ["lineThickness", "Printed line thickness (mm)", "0.1"],
+        ["textRight", "Line 1 must end: from right edge (mm)", "0.5"],
+        ["textRight2", "Line 2 must end: from right edge (mm)", "0.5"],
+        ["gapAbove", "Text-to-line gap (mm)", "0.1"],
+        ["nudgeX", "Fine-tune: move right (mm, - = left)", "0.1"],
+        ["nudgeY", "Fine-tune: move down (mm, - = up)", "0.1"],
+      ];
+
+      const FIELD_LABELS = {
+        payee: "Payee Name",
+        amountWords: "Amount in Words",
+        amountNumeric: "Numerical Value",
+        date: "Date",
+        acPayee: "A/C Payee",
+        all: "All Components",
+      };
+
+      // Lighter "raised card" that fades in behind a left-panel section (takes no layout space)
+      function FocusBackdrop({ on }) {
+        return (
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute -inset-2 -z-10 !mt-0 rounded-xl bg-slate-800/70 ring-1 ring-white/5 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.7)] transition-all duration-300 ease-out ${
+              on ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        );
+      }
+
       // Default Layout Configuration Baselines (Values optimized in Millimeters)
       const DEFAULT_PRESETS = {
         sbi: {
@@ -549,9 +593,6 @@
           },
         },
       };
-
-      // Master Application Configs
-      const DEFAULT_ZOOM_FACTOR = 1.4;
 
       // Utility: Indian Numbering System Converter (Scales to Crores)
       function convertAmountToIndianWords(amount) {
@@ -1176,8 +1217,6 @@
         );
       }
 
-      const PRINT_CANVAS = { width: 203, height: 89 }; // must match .cheque-canvas-print in the print CSS
-
       // Draws one text centred in a box, on an SVG as large as the real cheque.
       // Anchored to the canvas's right edge and vertical centre, like the cheque feed.
       function BoxCenteredText({
@@ -1361,25 +1400,6 @@
         );
       }
 
-      // Sidebar controls for fields drawn on a printed line: [key, label, step]
-      const PAYEE_LINE_CONTROLS = [
-        ["lineThickness", "Printed line thickness (mm)", "0.1"],
-        ["textRight", "Text must end: from right edge (mm)", "0.5"],
-        ["line2Left", "Line 2 starts: from left edge (mm)", "0.5"],
-        ["gapAbove", "Text-to-line gap, above (mm)", "0.1"],
-        ["gapBelow", "Text-to-line gap, below (mm)", "0.1"],
-        ["nudgeX", "Fine-tune: move right (mm, - = left)", "0.1"],
-        ["nudgeY", "Fine-tune: move down (mm, - = up)", "0.1"],
-      ];
-      const WORDS_LINE_CONTROLS = [
-        ["lineThickness", "Printed line thickness (mm)", "0.1"],
-        ["textRight", "Line 1 must end: from right edge (mm)", "0.5"],
-        ["textRight2", "Line 2 must end: from right edge (mm)", "0.5"],
-        ["gapAbove", "Text-to-line gap (mm)", "0.1"],
-        ["nudgeX", "Fine-tune: move right (mm, - = left)", "0.1"],
-        ["nudgeY", "Fine-tune: move down (mm, - = up)", "0.1"],
-      ];
-
       // Collapsible section, closed by default (used for the "Exact positions" settings)
       function Collapsible({ title, children, defaultOpen = false }) {
         const [open, setOpen] = React.useState(defaultOpen);
@@ -1437,6 +1457,22 @@
         );
       }
 
+      // Runs fn once a smooth scroll has settled (the element stops moving), or after 1.2 s at most
+      function afterScrollSettles(el, fn) {
+        const start = performance.now();
+        let lastTop = el.getBoundingClientRect().top;
+        let still = 0;
+        const tick = () => {
+          const top = el.getBoundingClientRect().top;
+          still = Math.abs(top - lastTop) < 0.5 ? still + 1 : 0;
+          lastTop = top;
+          const elapsed = performance.now() - start;
+          if ((still >= 4 && elapsed > 120) || elapsed > 1200) fn();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+
       function App() {
         // STATES START HERE --------------------------------------------------------------
 
@@ -1453,6 +1489,8 @@
         // Configuration Layout Positioning Matrices
         const [fields, setFields] = useState(DEFAULT_PRESETS.icici.fields);
         const [activeFieldKey, setActiveFieldKey] = useState("payee");
+        const [hasFocus, setHasFocus] = useState(false); // highlights on or off; Settings keep activeFieldKey
+        const focusKey = hasFocus ? activeFieldKey : null;
 
         const [printHistory, setPrintHistory] = useState(
           () => JSON.parse(localStorage.getItem("cheque_print_history")) || [],
@@ -1615,6 +1653,7 @@
         const focusTimerRef = React.useRef(null); // pending "scroll to the input" after a single click
         const lastClickRef = React.useRef({ key: null, time: 0 }); // for double-click detection
         const programmaticFocusRef = React.useRef(false); // true while the app itself moves the cursor
+        const focusClaimedAtRef = React.useRef(0); // when a field last claimed focus (to ignore that same click)
 
         // Unified Custom-Themed UI Authentication Processing Engine
         const handleAuthSubmit = () => {
@@ -1815,6 +1854,8 @@
 
           // Select the field straight away, so the highlight is instant
           setActiveFieldKey(fieldKey);
+          setHasFocus(true);
+          focusClaimedAtRef.current = Date.now();
 
           // A newer click always replaces a pending jump
           if (focusTimerRef.current) {
@@ -1842,25 +1883,54 @@
           if (fieldKey === "all") targetRef = settingsRef;
 
           if (targetRef) {
-            // Single click: scroll to the input and place the cursor in it, after a short
-            // pause so a second click (double-click) can cancel it
-            focusTimerRef.current = setTimeout(() => {
-              focusTimerRef.current = null;
+            // Single click: after a short pause (so a double-click can cancel it), scroll to the
+            // input, and place the cursor only once the scroll has settled. Focusing a date
+            // input mid-scroll can make the browser jump instantly.
+            const token = {};
+            focusTimerRef.current = token;
+            setTimeout(() => {
+              if (focusTimerRef.current !== token) return; // replaced or cancelled
               const box = targetRef.current;
               if (!box) return;
               box.scrollIntoView({ behavior: "smooth", block: "center" });
-              const inputElement = box.querySelector("input, select");
-              if (inputElement) {
-                programmaticFocusRef.current = true;
-                try {
-                  inputElement.focus({ preventScroll: true });
-                } finally {
-                  programmaticFocusRef.current = false;
+              afterScrollSettles(box, () => {
+                if (focusTimerRef.current !== token) return;
+                focusTimerRef.current = null;
+                const inputElement = box.querySelector("input, select");
+                if (inputElement) {
+                  programmaticFocusRef.current = true;
+                  try {
+                    inputElement.focus({ preventScroll: true });
+                  } finally {
+                    programmaticFocusRef.current = false;
+                  }
                 }
-              }
+              });
             }, 250);
           }
         };
+
+        // The user put the cursor in one of a field's left-panel inputs, so make that
+        // the field shown in Settings. Ignored when the app itself moved the cursor
+        // (after a click in the preview), so that click's choice is kept.
+        const selectFieldOnFocus = (fieldKey) => {
+          if (programmaticFocusRef.current) return;
+          setActiveFieldKey(fieldKey);
+          setHasFocus(true);
+        };
+
+        // Clicking anywhere outside the fields and the Settings panel clears the highlights.
+        // Settings still show the last selected field.
+        useEffect(() => {
+          const onDocClick = (e) => {
+            if (Date.now() - focusClaimedAtRef.current < 400) return; // a preview field just claimed focus
+            if (e.target.closest && e.target.closest("[data-keep-focus]"))
+              return;
+            setHasFocus(false);
+          };
+          document.addEventListener("click", onDocClick);
+          return () => document.removeEventListener("click", onDocClick);
+        }, []);
 
         // Synchronize configuration parameters when swapping default bank baselines
         const handleBankChange = (bankKey) => {
@@ -2555,7 +2625,9 @@
 
                       <div
                         ref={payeeRef}
-                        className="transition-all duration-200"
+                        onFocus={() => selectFieldOnFocus("payee")}
+                        data-keep-focus="true"
+                        className="relative isolate transition-all duration-200"
                       >
                         <label className="text-xs text-slate-300 block mb-1">
                           Payee Name
@@ -2575,11 +2647,14 @@
                           max={250}
                           disabled={showVerifyToast}
                         />
+                        <FocusBackdrop on={focusKey === "payee"} />
                       </div>
 
                       <div
                         ref={amountRef}
-                        className="transition-all duration-200"
+                        onFocus={() => selectFieldOnFocus("amountNumeric")}
+                        data-keep-focus="true"
+                        className="relative isolate transition-all duration-200"
                       >
                         <label className="text-xs text-slate-300 block mb-1">
                           Amount (Numerical ₹)
@@ -2610,11 +2685,19 @@
                           disabled={showVerifyToast}
                           className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
                         />
+                        <FocusBackdrop
+                          on={
+                            focusKey === "amountNumeric" ||
+                            focusKey === "amountWords"
+                          }
+                        />
                       </div>
 
                       <div
                         ref={dateRef}
-                        className="transition-all duration-200"
+                        onFocus={() => selectFieldOnFocus("date")}
+                        data-keep-focus="true"
+                        className="relative isolate transition-all duration-200"
                       >
                         <label className="text-xs text-slate-300 block mb-1">
                           Cheque Date
@@ -2633,34 +2716,51 @@
                             <i data-lucide="calendar" className="w-4 h-4"></i>
                           </div>
                         </div>
+                        <FocusBackdrop on={focusKey === "date"} />
                       </div>
 
-                      <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-                        <span className="block text-[10px] text-slate-400 font-mono uppercase">
-                          Amount in Words:
-                        </span>
-                        <span className="block mt-1 text-sm text-slate-200 leading-snug">
-                          {generatedWords || "—"}
-                        </span>
-                      </div>
+                      <div
+                        onFocus={() => selectFieldOnFocus("amountWords")}
+                        onClick={() => selectFieldOnFocus("amountWords")}
+                        data-keep-focus="true"
+                        className="relative isolate space-y-4"
+                      >
+                        <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                          <span className="block text-[10px] text-slate-400 font-mono uppercase">
+                            Amount in Words:
+                          </span>
+                          <span className="block mt-1 text-sm text-slate-200 leading-snug">
+                            {generatedWords || "—"}
+                          </span>
+                        </div>
 
-                      {/* Interactive Word Wrap Threshold Controller */}
-                      <WrapLimitControl
-                        label="Line 1 Word Limit"
-                        value={maxLine1Chars}
-                        onChange={setMaxLine1Chars}
-                        min={50}
-                        max={250}
-                        disabled={showVerifyToast}
-                      />
+                        {/* Interactive Word Wrap Threshold Controller */}
+                        <WrapLimitControl
+                          label="Line 1 Word Limit"
+                          value={maxLine1Chars}
+                          onChange={setMaxLine1Chars}
+                          min={50}
+                          max={250}
+                          disabled={showVerifyToast}
+                        />
+                        <FocusBackdrop on={focusKey === "amountWords"} />
+                      </div>
                     </div>
 
                     {/* Section: Position Adjustment Settings */}
-                    <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 flex flex-col space-y-4">
+                    <div
+                      data-keep-focus="true"
+                      onFocus={() => setHasFocus(true)}
+                      className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 flex flex-col space-y-4"
+                    >
                       <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                           Settings
                         </h3>
+                        <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-0.5">
+                          Adjusting:{" "}
+                          {FIELD_LABELS[activeFieldKey] || activeFieldKey}
+                        </span>
                       </div>
 
                       <div
@@ -3330,7 +3430,7 @@
                                   cheque={fields.cheque}
                                   color="#0f172a"
                                   preview
-                                  active={activeFieldKey === "payee"}
+                                  active={focusKey === "payee"}
                                   onClick={() => focusAndScrollToInput("payee")}
                                 />
                               ) : (
@@ -3339,7 +3439,7 @@
                                   lines={payeeLines}
                                   color="#0f172a"
                                   preview
-                                  active={activeFieldKey === "payee"}
+                                  active={focusKey === "payee"}
                                   onClick={() => focusAndScrollToInput("payee")}
                                   placeholder="[Payee Name Placeholder]"
                                 />
@@ -3353,7 +3453,7 @@
                                   cheque={fields.cheque}
                                   color="#0f172a"
                                   preview
-                                  active={activeFieldKey === "amountWords"}
+                                  active={focusKey === "amountWords"}
                                   onClick={() =>
                                     focusAndScrollToInput("amountWords")
                                   }
@@ -3364,7 +3464,7 @@
                                   lines={amountLines}
                                   color="#0f172a"
                                   preview
-                                  active={activeFieldKey === "amountWords"}
+                                  active={focusKey === "amountWords"}
                                   onClick={() =>
                                     focusAndScrollToInput("amountWords")
                                   }
@@ -3381,7 +3481,7 @@
                                   cheque={fields.cheque}
                                   color="#0f172a"
                                   preview
-                                  active={activeFieldKey === "amountNumeric"}
+                                  active={focusKey === "amountNumeric"}
                                   onClick={() =>
                                     focusAndScrollToInput("amountNumeric")
                                   }
@@ -3419,7 +3519,7 @@
                                   cheque={fields.cheque}
                                   color="#0f172a"
                                   preview
-                                  active={activeFieldKey === "date"}
+                                  active={focusKey === "date"}
                                   onClick={() => focusAndScrollToInput("date")}
                                 />
                               ) : (
