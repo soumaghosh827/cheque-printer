@@ -1481,11 +1481,11 @@
       }
 
       // Lighter "raised card" that fades in behind a left-panel section (takes no layout space)
-      function FocusBackdrop({ on }) {
+      function FocusBackdrop({ on, inset = "-inset-2" }) {
         return (
           <div
             aria-hidden="true"
-            className={`pointer-events-none absolute -inset-2 -z-10 !mt-0 rounded-xl bg-slate-800/70 ring-1 ring-white/5 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.7)] transition-all duration-300 ease-out ${
+            className={`pointer-events-none absolute ${inset} -z-10 !mt-0 rounded-xl bg-slate-800/70 ring-1 ring-white/5 shadow-[0_10px_30px_-8px_rgba(0,0,0,0.7)] transition-all duration-300 ease-out ${
               on ? "opacity-100" : "opacity-0"
             }`}
           />
@@ -1503,11 +1503,10 @@
           new Date().toISOString().split("T")[0],
         ); // Target standard YYYY-MM-DD format
 
-        // console.log("Date -> ", new Date().toISOString().split("T")[0]);
-
         // Configuration Layout Positioning Matrices
         const [fields, setFields] = useState(DEFAULT_PRESETS.icici.fields);
         const [activeFieldKey, setActiveFieldKey] = useState("payee");
+        const [acPayeeOn, setAcPayeeOn] = useState(false); // A/C Payee crossing: off by default, not saved in presets
         const [hasFocus, setHasFocus] = useState(false); // highlights on or off; Settings keep activeFieldKey
         const focusKey = hasFocus ? activeFieldKey : null;
 
@@ -1674,6 +1673,7 @@
         const programmaticFocusRef = React.useRef(false); // true while the app itself moves the cursor
         const focusClaimedAtRef = React.useRef(0); // when a field last claimed focus (to ignore that same click)
         const settingsPanelRef = React.useRef(null); // the whole Settings section (for double-click scrolling)
+        const acPayeeRef = React.useRef(null); // the A/C Payee switch row in the left panel
 
         // Unified Custom-Themed UI Authentication Processing Engine
         const handleAuthSubmit = () => {
@@ -1887,7 +1887,6 @@
           if (isDouble) {
             lastClickRef.current = { key: null, time: 0 };
             const panel = settingsPanelRef.current || settingsRef.current;
-            console.log("panel", panel);
             if (panel) {
               const scroller = panel.closest(".custom-sidebar-scroll"); // the left panel
               const header = document.querySelector("header");
@@ -1895,21 +1894,16 @@
                 ? header.getBoundingClientRect().bottom
                 : 0;
 
-              console.log("scroller", scroller);
-              console.log("headerBottom", headerBottom);
-
               if (scroller) {
                 // Scroll only the left panel, so the section's top lands just below the header
                 const visibleTop = Math.max(
                   headerBottom,
                   scroller.getBoundingClientRect().top,
                 );
-                console.log("visibleTop", visibleTop);
 
                 const delta =
                   panel.getBoundingClientRect().top - visibleTop - 16;
                 scroller.scrollBy({ top: delta, behavior: "smooth" });
-                console.log("delta", delta);
               } else {
                 panel.scrollIntoView({ behavior: "smooth", block: "start" });
               }
@@ -1922,6 +1916,7 @@
           if (fieldKey === "amountNumeric" || fieldKey === "amountWords")
             targetRef = amountRef;
           if (fieldKey === "date") targetRef = dateRef;
+          if (fieldKey === "acPayee") targetRef = acPayeeRef;
           if (fieldKey === "all") targetRef = settingsRef;
 
           if (targetRef) {
@@ -1938,7 +1933,7 @@
               afterScrollSettles(box, () => {
                 if (focusTimerRef.current !== token) return;
                 focusTimerRef.current = null;
-                const inputElement = box.querySelector("input, select");
+                const inputElement = box.querySelector("input, select, button");
                 if (inputElement) {
                   programmaticFocusRef.current = true;
                   try {
@@ -1997,7 +1992,7 @@
                   : parseFloat(value) || 0,
             },
           };
-          console.log(updated);
+          // console.log(updated);
           setFields(updated);
         };
 
@@ -2083,6 +2078,7 @@
           // Clear out UI notification alert anchors
           setShowVerifyToast(false);
           setPendingLogEntry(null);
+          setAcPayee(false); // the crossing is a per-cheque choice, so it resets after a confirmed print
         };
 
         // Executes if the hardware jammed or failed
@@ -2479,6 +2475,13 @@
                       posField("top", "Top (mm)"),
                     ];
 
+        // Turn the A/C Payee crossing on or off. Turning it off also drops its highlight
+        // (a highlighted ghost looks out of place); turning it on leaves focus as it is.
+        const setAcPayee = (on) => {
+          setAcPayeeOn(on);
+          if (!on && focusKey === "acPayee") setHasFocus(false);
+        };
+
         return (
           <React.Fragment>
             {/* WEB INTERFACE APP STRUCTURE */}
@@ -2761,6 +2764,55 @@
                         <FocusBackdrop on={focusKey === "date"} />
                       </div>
 
+                      {/* A/C Payee crossing switch: off by default, resets after each confirmed print */}
+                      <div
+                        ref={acPayeeRef}
+                        data-keep-focus="true"
+                        className={`relative isolate flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-300 ${
+                          focusKey === "acPayee"
+                            ? "border-transparent bg-transparent"
+                            : "border-slate-800 bg-slate-950/50"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
+                            <i
+                              data-lucide="landmark"
+                              className="w-3.5 h-3.5 text-slate-400"
+                            ></i>
+                            <span>A/C Payee crossing</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 leading-tight mt-0.5">
+                            {acPayeeOn
+                              ? "On: printed in the top-left corner"
+                              : "Off: not printed on this cheque"}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={acPayeeOn}
+                          aria-label="A/C Payee crossing"
+                          disabled={showVerifyToast}
+                          onClick={() => setAcPayee(!acPayeeOn)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                            acPayeeOn ? "bg-emerald-500" : "bg-slate-700"
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${
+                              acPayeeOn
+                                ? "translate-x-[1.125rem]"
+                                : "translate-x-0.5"
+                            }`}
+                          />
+                        </button>
+                        <FocusBackdrop
+                          on={focusKey === "acPayee"}
+                          inset="-inset-x-0 -inset-y-0.5"
+                        />
+                      </div>
+
                       <div
                         onFocus={() => selectFieldOnFocus("amountWords")}
                         onClick={() => selectFieldOnFocus("amountWords")}
@@ -2822,7 +2874,9 @@
                           <option value="all">
                             ✨ All Components (Global Shift)
                           </option>
-                          <option value="acPayee">🔒 A/C Payee</option>
+                          <option value="acPayee">
+                            A/C Payee{acPayeeOn ? "" : " (off)"}
+                          </option>
                           <option value="payee">Payee Name Field</option>
                           <option value="amountWords">Amount in Words</option>
                           <option value="amountNumeric">
@@ -2831,6 +2885,24 @@
                           <option value="date">Date</option>
                         </select>
                       </div>
+
+                      {activeFieldKey === "acPayee" && !acPayeeOn && (
+                        <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] leading-snug text-sky-200">
+                          <span>
+                            A/C Payee is off, so it won't print. You can still
+                            adjust it.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setAcPayee(true)}
+                            onFocus={(e) => e.stopPropagation()}
+                            disabled={showVerifyToast}
+                            className="shrink-0 rounded-md border border-sky-400/40 bg-sky-400/20 hover:bg-sky-400/30 px-2 py-1 font-medium text-sky-100 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Turn on
+                          </button>
+                        </div>
+                      )}
 
                       <div>
                         <label className="text-[11px] text-slate-400 block mb-1">
@@ -3452,35 +3524,58 @@
                                   transformOrigin: "center center",
                                   userSelect: "none",
                                 }}
-                                className={`cursor-pointer rounded transition ${activeFieldKey === "acPayee" ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30" : "hover:bg-slate-400/20"}`}
-                                onClick={() => focusAndScrollToInput("acPayee")}
+                                className={`cursor-pointer rounded transition-all duration-200 ${
+                                  acPayeeOn ? "" : "opacity-40 hover:opacity-80"
+                                } ${
+                                  focusKey === "acPayee" && acPayeeOn
+                                    ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30"
+                                    : acPayeeOn
+                                      ? "hover:bg-slate-400/20"
+                                      : ""
+                                }`}
+                                title={
+                                  acPayeeOn
+                                    ? undefined
+                                    : "Click to add the A/C Payee crossing"
+                                }
+                                onClick={() => {
+                                  if (!acPayeeOn) setAcPayeeOn(true);
+                                  focusAndScrollToInput("acPayee");
+                                }}
                               >
-                                {/* Upper Horizontal Line Boundary */}
+                                {/* Upper line: solid when on, dashed ghost when off */}
                                 <div
                                   className="w-full"
                                   style={{
                                     height: 0,
-                                    borderTop: "0.3mm solid #0f172a",
+                                    borderTop: acPayeeOn
+                                      ? "0.3mm solid #0f172a"
+                                      : "0.3mm dashed #64748b",
                                   }}
                                 ></div>
 
-                                {/* Standard Compliant Mask Text */}
                                 <span
                                   style={{
                                     fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
-                                    letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm` /* Linked dynamically to state input */,
+                                    letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm`,
                                   }}
-                                  className="font-bold text-slate-900 uppercase tracking-widest my-0.5"
+                                  className={`font-bold uppercase tracking-widest my-0.5 ${
+                                    acPayeeOn
+                                      ? "text-slate-900"
+                                      : "text-slate-500"
+                                  }`}
                                 >
-                                  A/C Payee
+                                  {acPayeeOn ? "A/C Payee" : "+ A/C Payee"}
                                 </span>
 
-                                {/* Lower Horizontal Line Boundary */}
+                                {/* Lower line */}
                                 <div
                                   className="w-full"
                                   style={{
                                     height: 0,
-                                    borderTop: "0.3mm solid #0f172a",
+                                    borderTop: acPayeeOn
+                                      ? "0.3mm solid #0f172a"
+                                      : "0.3mm dashed #64748b",
                                   }}
                                 ></div>
                               </div>
@@ -3642,54 +3737,56 @@
                   }}
                 >
                   {/* Dynamic Printing Element: A/C Payee Corner Crossing (100% Mirror Print Synced) */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: `${fields.acPayee?.top ?? 5.0}mm`,
-                      left: `${fields.acPayee?.left ?? 6.0}mm`,
-                      width: `${fields.acPayee?.width ?? 50.0}mm`,
-                      height: "10mm",
-                      display: "flex",
-                      flexDirection: "column",
-                      justifyContent: "center",
-                      alignItems: "center",
-                      fontFamily: fields.acPayee?.fontFamily || "Arial",
-                      transform: `rotate(${fields.acPayee?.angle ?? -15}deg)` /* Mirrors the exact real-time rotation angle */,
-                      transformOrigin: "center center",
-                    }}
-                  >
-                    {/* Upper Printing Line (True Solid Black) */}
+                  {acPayeeOn && (
                     <div
                       style={{
-                        width: "100%",
-                        height: 0,
-                        borderTop: "0.3mm solid #000000",
-                      }}
-                    ></div>
-
-                    {/* Secured Printing Text */}
-                    <span
-                      style={{
-                        fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
-                        letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm` /* Mirrors the exact tracking pitch */,
-                        fontWeight: "bold",
-                        color: "#000000",
-                        textTransform: "uppercase",
-                        margin: "0.5mm 0",
+                        position: "absolute",
+                        top: `${fields.acPayee?.top ?? 5.0}mm`,
+                        left: `${fields.acPayee?.left ?? 6.0}mm`,
+                        width: `${fields.acPayee?.width ?? 50.0}mm`,
+                        height: "10mm",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        fontFamily: fields.acPayee?.fontFamily || "Arial",
+                        transform: `rotate(${fields.acPayee?.angle ?? -15}deg)` /* Mirrors the exact real-time rotation angle */,
+                        transformOrigin: "center center",
                       }}
                     >
-                      A/C Payee
-                    </span>
+                      {/* Upper Printing Line (True Solid Black) */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 0,
+                          borderTop: "0.3mm solid #000000",
+                        }}
+                      ></div>
 
-                    {/* Lower Printing Line (True Solid Black) */}
-                    <div
-                      style={{
-                        width: "100%",
-                        height: 0,
-                        borderTop: "0.3mm solid #000000",
-                      }}
-                    ></div>
-                  </div>
+                      {/* Secured Printing Text */}
+                      <span
+                        style={{
+                          fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
+                          letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm` /* Mirrors the exact tracking pitch */,
+                          fontWeight: "bold",
+                          color: "#000000",
+                          textTransform: "uppercase",
+                          margin: "0.5mm 0",
+                        }}
+                      >
+                        A/C Payee
+                      </span>
+
+                      {/* Lower Printing Line (True Solid Black) */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 0,
+                          borderTop: "0.3mm solid #000000",
+                        }}
+                      ></div>
+                    </div>
+                  )}
 
                   {/* Payee Target Text */}
                   {usePayeeSvg ? (
