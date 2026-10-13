@@ -276,7 +276,7 @@
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
-              fontWeight: "normal",
+              fontWeight: "bold",
               letterSpacing: 0.4,
               angle: -45,
             },
@@ -316,7 +316,7 @@
               boxTop: 32.75,
               boxWidth: 38.5,
               boxHeight: 8.5,
-              heightRatio: 0.6,
+              heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -328,7 +328,7 @@
               boxWidth: 46.86,
               boxHeight: 6,
               cells: 8,
-              heightRatio: 0.5,
+              heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -348,7 +348,7 @@
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
-              fontWeight: "normal",
+              fontWeight: "bold",
               letterSpacing: 0.4,
               angle: -45,
             },
@@ -388,7 +388,7 @@
               boxTop: 30.5,
               boxWidth: 38,
               boxHeight: 8.5,
-              heightRatio: 0.6,
+              heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -400,7 +400,7 @@
               boxWidth: 45,
               boxHeight: 6,
               cells: 8,
-              heightRatio: 0.5,
+              heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -421,7 +421,7 @@
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
-              fontWeight: "normal",
+              fontWeight: "bold",
               letterSpacing: 0.4,
               angle: -45,
             },
@@ -461,7 +461,7 @@
               boxTop: 32.3,
               boxWidth: 39,
               boxHeight: 9.5,
-              heightRatio: 0.5,
+              heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -473,7 +473,7 @@
               boxWidth: 42.3,
               boxHeight: 6,
               cells: 8,
-              heightRatio: 0.45,
+              heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -493,7 +493,7 @@
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
-              fontWeight: "normal",
+              fontWeight: "bold",
               letterSpacing: 0.4,
               angle: -45,
             },
@@ -532,7 +532,7 @@
               boxTop: 35,
               boxWidth: 38,
               boxHeight: 8.5,
-              heightRatio: 0.4,
+              heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -544,7 +544,7 @@
               boxWidth: 42.5,
               boxHeight: 5,
               cells: 8,
-              heightRatio: 0.45,
+              heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Microsoft Himalaya",
@@ -564,7 +564,7 @@
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
-              fontWeight: "normal",
+              fontWeight: "bold",
               letterSpacing: 0.4,
               angle: -45,
             },
@@ -604,7 +604,7 @@
               boxTop: 34.3,
               boxWidth: 38.5,
               boxHeight: 9,
-              heightRatio: 0.5,
+              heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -616,7 +616,7 @@
               boxWidth: 50.3,
               boxHeight: 6,
               cells: 8,
-              heightRatio: 0.45,
+              heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
               fontFamily: "Consolas",
@@ -1447,15 +1447,15 @@
         // STATES START HERE --------------------------------------------------------------
 
         // Document States
-        const [selectedBank, setSelectedBank] = useState("icici");
-        const [payeeName, setPayeeName] = useState("John Doe");
-        const [amount, setAmount] = useState("456789957");
+        const [selectedBank, setSelectedBank] = useState("sbi");
+        const [payeeName, setPayeeName] = useState("Name");
+        const [amount, setAmount] = useState("0");
         const [chequeDate, setChequeDate] = useState(
           new Date().toISOString().split("T")[0],
         ); // Target standard YYYY-MM-DD format
 
         // Configuration Layout Positioning Matrices
-        const [fields, setFields] = useState(DEFAULT_PRESETS.icici.fields);
+        const [fields, setFields] = useState(DEFAULT_PRESETS.sbi.fields);
         const [activeFieldKey, setActiveFieldKey] = useState("payee");
         const [acPayeeOn, setAcPayeeOn] = useState(false); // A/C Payee crossing: off by default, not saved in presets
         const [hasFocus, setHasFocus] = useState(false); // highlights on or off; Settings keep activeFieldKey
@@ -1473,8 +1473,8 @@
         const [showVerifyToast, setShowVerifyToast] = useState(false);
 
         // Dynamic Word Wrap Threshold States (Range: 20 to 100 characters)
-        const [maxLine1Chars, setMaxLine1Chars] = useState(100);
-        const [maxPayeeLine1Chars, setMaxPayeeLine1Chars] = useState(60);
+        const [maxLine1Chars, setMaxLine1Chars] = useState(120);
+        const [maxPayeeLine1Chars, setMaxPayeeLine1Chars] = useState(200);
 
         // Workspace Interactive Zoom State (Range: 0.8 to 2.0)
         const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
@@ -1941,7 +1941,7 @@
                   : parseFloat(value) || 0,
             },
           };
-          // console.log(updated);
+          // console.log("updated", updated);
           setFields(updated);
         };
 
@@ -3451,8 +3451,9 @@
                                   style={{
                                     fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
                                     letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm`,
+                                    fontWeight: `${fields.acPayee?.fontWeight || "normal"}`,
                                   }}
-                                  className={`font-bold uppercase tracking-widest my-0.5 ${
+                                  className={`uppercase tracking-widest my-0.5 ${
                                     acPayeeOn
                                       ? "text-slate-900"
                                       : "text-slate-500"
@@ -3581,7 +3582,7 @@
                         style={{
                           fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
                           letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm` /* Mirrors the exact tracking pitch */,
-                          fontWeight: "bold",
+                          fontWeight: `${fields.acPayee?.fontWeight || "normal"}`,
                           color: "#000000",
                           textTransform: "uppercase",
                           margin: "0.5mm 0",
