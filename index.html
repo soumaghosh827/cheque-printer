@@ -5,21 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Enterprise Internal Cheque Printing Utility</title>
     <!-- Tailwind CSS for UI controls styling -->
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <!-- React and ReactDOM from CDN -->
-    <script
-      src="https://unpkg.com/react@18/umd/react.development.js"
-      crossorigin
-    ></script>
-    <script
-      src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"
-      crossorigin
-    ></script>
-    <!-- Babel for inline JSX compilation -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-    <script src="https://unpkg.com/lucide@1.49.0"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <!-- Libraries, stored locally so the app works offline -->
+    <script src="vendor/tailwind-browser.js"></script>
+    <script src="vendor/react.development.js"></script>
+    <script src="vendor/react-dom.development.js"></script>
+    <script src="vendor/babel.min.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="vendor/lucide.js"></script>
+    <script src="vendor/crypto-js.min.js"></script>
 
     <style>
       /* Global CSS Rules */
