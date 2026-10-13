@@ -1503,6 +1503,10 @@
         // Toast Notification Stack State Tracker
         const [toasts, setToasts] = useState([]);
 
+        // Payee suggestion states
+        const [suggestions, setSuggestions] = useState([]);
+        const [showSuggestions, setShowSuggestions] = useState(false);
+
         // STATES END HERE --------------------------------------------------------------
 
         // EFFECTS START HERE --------------------------------------------------------------
@@ -1516,10 +1520,27 @@
           );
         }, []);
 
+        const pickupSuggestions = () => {
+          const storedSuggestions = localStorage.getItem("suggestions");
+          console.log("storedSuggestions", storedSuggestions);
+          let parsed = [...suggestions];
+          // console.log(parsed);
+          try {
+            parsed = [...parsed, ...JSON.parse(storedSuggestions || "[]")];
+            // console.log("parsed", parsed);
+          } catch (error) {
+            showToast("Error parsing suggestions", "error");
+          }
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSuggestions(parsed);
+          }
+        };
+
         // Read LocalStorage configurations on startup
         useEffect(() => {
           const stored = localStorage.getItem(`cheque_preset_sbi`);
           if (stored) setFields(JSON.parse(stored));
+          pickupSuggestions();
         }, []);
 
         // Lock down window execution loops if a hardware verification prompt is active
@@ -1609,6 +1630,12 @@
             scanForQuarantinedLogs();
           }
         }, [isDashboardLocked]);
+
+        useEffect(() => {
+          if (isDashboardLocked || activeFieldKey !== "payee") {
+            setShowSuggestions(false);
+          }
+        }, [payeeName, activeFieldKey, isDashboardLocked]);
 
         // EFFECTS END HERE --------------------------------------------------------------
 
@@ -2636,7 +2663,7 @@
                         ref={payeeRef}
                         onFocus={() => selectFieldOnFocus("payee")}
                         data-keep-focus="true"
-                        className="relative isolate transition-all duration-200"
+                        className={`relative isolate transition-all duration-200 ${focusKey === "payee" ? "z-10" : "z-0"}`}
                       >
                         <label className="text-xs text-slate-300 block mb-1">
                           Payee Name
@@ -2644,10 +2671,49 @@
                         <input
                           type="text"
                           value={payeeName}
-                          onChange={(e) => setPayeeName(e.target.value)}
+                          onChange={(e) => {
+                            setPayeeName(e.target.value);
+                            setShowSuggestions(true); // typing opens the popup again
+                          }}
+                          onBlur={() => setShowSuggestions(false)} // focus left the input: close it
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") setShowSuggestions(false);
+                          }}
                           disabled={showVerifyToast}
                           className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
                         />
+
+                        {/* Suggestion Dropdown Popup */}
+                        {showSuggestions &&
+                          payeeName &&
+                          suggestions.length > 0 && (
+                            <div className="absolute z-50 left-0 right-0 mt-2 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/60 shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden">
+                              <ul
+                                onMouseDown={(e) => e.preventDefault()}
+                                className="max-h-60 overflow-y-auto divide-y divide-slate-800/50 pr-1 scrollbar-thin"
+                              >
+                                {suggestions
+                                  .filter((item) =>
+                                    item
+                                      .toLowerCase()
+                                      .includes(payeeName.toLowerCase()),
+                                  )
+                                  .map((item, index) => (
+                                    <li
+                                      key={index}
+                                      onClick={() => {
+                                        setPayeeName(item);
+                                        setShowSuggestions(false);
+                                      }}
+                                      className="p-3 text-sm text-slate-300 hover:bg-blue-600/90 hover:text-white cursor-pointer transition-all duration-150 first:rounded-t-xl last:rounded-b-xl"
+                                    >
+                                      {item}
+                                    </li>
+                                  ))}
+                              </ul>
+                            </div>
+                          )}
+
                         <WrapLimitControl
                           label="Payee Line 1 Limit"
                           value={maxPayeeLine1Chars}
