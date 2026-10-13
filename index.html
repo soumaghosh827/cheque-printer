@@ -292,7 +292,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountWords: {
@@ -308,7 +308,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountNumeric: {
@@ -319,7 +319,7 @@
               heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             date: {
@@ -331,7 +331,7 @@
               heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             all: { fontFamily: "Arial" },
@@ -364,7 +364,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountWords: {
@@ -380,7 +380,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountNumeric: {
@@ -391,7 +391,7 @@
               heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             date: {
@@ -403,7 +403,7 @@
               heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
               letterSpacing: 3.3,
             },
@@ -437,7 +437,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountWords: {
@@ -453,7 +453,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountNumeric: {
@@ -464,7 +464,7 @@
               heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             date: {
@@ -476,7 +476,7 @@
               heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             all: { fontFamily: "Arial" },
@@ -499,7 +499,7 @@
             },
             payee: {
               line2Left: 5,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
               lineTop: 27.5,
               lineThickness: 0.5,
@@ -513,7 +513,7 @@
             },
             amountWords: {
               line2Left: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
               lineTop: 35.25,
               lineThickness: 0.5,
@@ -535,7 +535,7 @@
               heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             date: {
@@ -580,7 +580,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountWords: {
@@ -596,7 +596,7 @@
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Arial",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             amountNumeric: {
@@ -607,7 +607,7 @@
               heightRatio: 0.28,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             date: {
@@ -619,7 +619,7 @@
               heightRatio: 0.4,
               nudgeX: 0,
               nudgeY: 0,
-              fontFamily: "Consolas",
+              fontFamily: "Microsoft Himalaya",
               fontWeight: "normal",
             },
             all: { fontFamily: "Arial" },
@@ -1448,7 +1448,7 @@
 
         // Document States
         const [selectedBank, setSelectedBank] = useState("sbi");
-        const [payeeName, setPayeeName] = useState("Name");
+        const [payeeName, setPayeeName] = useState("");
         const [amount, setAmount] = useState("0");
         const [chequeDate, setChequeDate] = useState(
           new Date().toISOString().split("T")[0],
@@ -2875,7 +2875,7 @@
                         <select
                           value={
                             activeFieldKey === "all"
-                              ? "Arial"
+                              ? "Microsoft Himalaya"
                               : fields[activeFieldKey]?.fontFamily || "Arial"
                           }
                           onChange={(e) =>
@@ -2896,9 +2896,6 @@
                             </option>
                             <option value="Arial">
                               Arial (Default Corporate)
-                            </option>
-                            <option value="Helvetica">
-                              Helvetica (Clean & Balanced)
                             </option>
                             <option value="system-ui">
                               System UI (Native OS Font)
