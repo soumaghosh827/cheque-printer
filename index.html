@@ -1451,6 +1451,27 @@
 
       const PRINTER_KEY = "cheque_printer_name"; // the chosen printer, remembered between runs
 
+      // Counts the digits and decimal points before position `pos`. Commas don't count,
+      // so they can appear and disappear while formatting without moving the caret.
+      function countAmountChars(text, pos) {
+        let n = 0;
+        for (let i = 0; i < pos && i < text.length; i++) {
+          if (/[0-9.]/.test(text[i])) n++;
+        }
+        return n;
+      }
+
+      // Puts the caret right after the n-th digit or decimal point of the formatted value
+      function placeAmountCaret(el, n) {
+        let pos = 0;
+        let seen = 0;
+        while (pos < el.value.length && seen < n) {
+          if (/[0-9.]/.test(el.value[pos])) seen++;
+          pos++;
+        }
+        el.setSelectionRange(pos, pos);
+      }
+
       function App() {
         // STATES START HERE --------------------------------------------------------------
 
@@ -1652,6 +1673,14 @@
           }
         }, [payeeName, activeFieldKey, isDashboardLocked]);
 
+        // After React re-renders the formatted amount, put the caret back where the user was typing
+        React.useLayoutEffect(() => {
+          if (amountCaretRef.current === null || !amountInputRef.current)
+            return;
+          placeAmountCaret(amountInputRef.current, amountCaretRef.current);
+          amountCaretRef.current = null;
+        });
+
         // EFFECTS END HERE --------------------------------------------------------------
 
         // DOM Input Section Reference Anchors for Automated Scrolling
@@ -1666,6 +1695,9 @@
         const settingsPanelRef = React.useRef(null); // the whole Settings section (for double-click scrolling)
         const acPayeeRef = React.useRef(null); // the A/C Payee switch row in the left panel
         const printingRef = React.useRef(false); // true while a print is in progress
+        const amountInputRef = React.useRef(null);
+        const amountCaretRef = React.useRef(null); // where the caret should go after the next render
+        const [, setCaretTick] = useState(0); // forces a render, so the caret is restored even if the value doesn't change
 
         // Unified Custom-Themed UI Authentication Processing Engine
         const handleAuthSubmit = () => {
@@ -2919,10 +2951,41 @@
                           Amount (Numerical ₹)
                         </label>
                         <input
+                          ref={amountInputRef}
                           type="text"
                           value={formatAmountInput(amount)}
                           onChange={(e) => {
-                            let raw = e.target.value.replace(/,/g, "");
+                            const el = e.target;
+                            const typed = el.value;
+                            let caretChars = countAmountChars(
+                              typed,
+                              el.selectionStart,
+                            );
+                            let raw = typed.replace(/,/g, "");
+
+                            // Backspace/Delete next to a comma only removes the comma, and the formatting
+                            // would put it straight back. Delete the neighbouring digit instead.
+                            const kind = e.nativeEvent.inputType;
+                            if (
+                              raw === amount &&
+                              (kind === "deleteContentBackward" ||
+                                kind === "deleteContentForward")
+                            ) {
+                              const at =
+                                kind === "deleteContentBackward"
+                                  ? caretChars - 1
+                                  : caretChars;
+                              if (at >= 0 && at < raw.length) {
+                                raw = raw.slice(0, at) + raw.slice(at + 1);
+                                if (kind === "deleteContentBackward")
+                                  caretChars = at;
+                              }
+                            }
+
+                            // Keep the caret where the user was, whatever happens next
+                            amountCaretRef.current = caretChars;
+                            setCaretTick((t) => t + 1);
+
                             if (raw === "") {
                               setAmount("");
                               return;
@@ -2933,7 +2996,17 @@
                             const maxLimit = 99999999999; // 9,999 Crores baseline cap (rupees part)
                             const hasDot = raw.includes(".");
                             let [intPart, decPart = ""] = raw.split(".");
+                            const rawInt = intPart;
                             intPart = intPart.replace(/^0+(?=\d)/, "") || "0";
+                            if (rawInt === "") {
+                              amountCaretRef.current += 1; // ".5" becomes "0.5"
+                            } else {
+                              // leading zeros were removed: the caret moves back by the ones before it
+                              amountCaretRef.current -= Math.min(
+                                amountCaretRef.current,
+                                rawInt.length - intPart.length,
+                              );
+                            }
                             if (Number(intPart) > maxLimit)
                               intPart = String(maxLimit);
                             setAmount(
