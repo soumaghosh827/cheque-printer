@@ -210,6 +210,19 @@
     <div id="root"></div>
 
     <script type="text/babel">
+      // Desktop app: data lives in a file via the Electron bridge. Browser: plain localStorage.
+      const appStorage = window.desktop
+        ? {
+            getItem: (k) => window.desktop.storage.getItem(k),
+            setItem: (k, v) => window.desktop.storage.setItem(k, v),
+            removeItem: (k) => window.desktop.storage.removeItem(k),
+            key: (i) => window.desktop.storage.key(i),
+            get length() {
+              return window.desktop.storage.length();
+            },
+          }
+        : window.localStorage;
+
       const { useState, useEffect } = React;
 
       const BANK_KEYS = ["sbi", "axis", "hdfc", "icici", "indusind"];
@@ -1436,6 +1449,8 @@
         );
       }
 
+      const PRINTER_KEY = "cheque_printer_name"; // the chosen printer, remembered between runs
+
       function App() {
         // STATES START HERE --------------------------------------------------------------
 
@@ -1455,7 +1470,7 @@
         const focusKey = hasFocus ? activeFieldKey : null;
 
         const [printHistory, setPrintHistory] = useState(
-          () => JSON.parse(localStorage.getItem("cheque_print_history")) || [],
+          () => JSON.parse(appStorage.getItem("cheque_print_history")) || [],
         );
 
         // Global shift offset matrix for multi-element configuration tracking
@@ -1500,6 +1515,12 @@
         const [suggestions, setSuggestions] = useState([]);
         const [showSuggestions, setShowSuggestions] = useState(false);
 
+        // In-app print panel (desktop): choose the printer, then print silently
+        const [showPrintPanel, setShowPrintPanel] = useState(false);
+        const [printers, setPrinters] = useState([]);
+        const [selectedPrinter, setSelectedPrinter] = useState("");
+        const [printerNote, setPrinterNote] = useState("");
+
         // STATES END HERE --------------------------------------------------------------
 
         // EFFECTS START HERE --------------------------------------------------------------
@@ -1514,7 +1535,7 @@
         }, []);
 
         const pickupSuggestions = () => {
-          const storedSuggestions = localStorage.getItem("suggestions");
+          const storedSuggestions = appStorage.getItem("suggestions");
           console.log("storedSuggestions", storedSuggestions);
           let parsed = [...suggestions];
           // console.log(parsed);
@@ -1531,7 +1552,7 @@
 
         // Read LocalStorage configurations on startup
         useEffect(() => {
-          const stored = localStorage.getItem(`cheque_preset_sbi`);
+          const stored = appStorage.getItem(`cheque_preset_sbi`);
           if (stored) setFields(JSON.parse(stored));
           pickupSuggestions();
         }, []);
@@ -1573,19 +1594,20 @@
           selectedArchiveKey,
           archiveRecoveryError,
           toasts,
+          showPrintPanel,
         ]); // Re-scans dynamically when tabs or overlays change state
 
         // Background Database Initialization and Storage Audit Engine
         useEffect(() => {
           const auditSystemStorage = () => {
-            const cipherText = localStorage.getItem(
+            const cipherText = appStorage.getItem(
               "cheque_print_history_encrypted",
             );
 
             // 1. Scan storage indices for any historical quarantined archive logs keys
             let archivedLogsExist = false;
-            for (let i = 0; i < localStorage.length; i++) {
-              const storageKey = localStorage.key(i);
+            for (let i = 0; i < appStorage.length; i++) {
+              const storageKey = appStorage.key(i);
               if (
                 storageKey &&
                 storageKey.startsWith("cheque_print_history_quarantined_")
@@ -1643,6 +1665,7 @@
         const focusClaimedAtRef = React.useRef(0); // when a field last claimed focus (to ignore that same click)
         const settingsPanelRef = React.useRef(null); // the whole Settings section (for double-click scrolling)
         const acPayeeRef = React.useRef(null); // the A/C Payee switch row in the left panel
+        const printingRef = React.useRef(false); // true while a print is in progress
 
         // Unified Custom-Themed UI Authentication Processing Engine
         const handleAuthSubmit = () => {
@@ -1671,7 +1694,7 @@
           }
 
           // 3. RETURNING UNLOCK VERIFICATION PATHWAY
-          const cipherText = localStorage.getItem(
+          const cipherText = appStorage.getItem(
             "cheque_print_history_encrypted",
           );
           if (!cipherText) return;
@@ -1704,7 +1727,7 @@
 
         // Graceful Alternative Reset & Quarantine Isolation Routine
         const handleQuarantineAndReset = () => {
-          const cipherText = localStorage.getItem(
+          const cipherText = appStorage.getItem(
             "cheque_print_history_encrypted",
           );
 
@@ -1715,8 +1738,8 @@
             const quarantineStorageKey = `cheque_print_history_quarantined_${currentDateStamp}_${uniqueUnixTime}`;
 
             // Quarantine the old encrypted logs ciphertext aside safely inside local storage cluster
-            localStorage.setItem(quarantineStorageKey, cipherText);
-            localStorage.removeItem("cheque_print_history_encrypted");
+            appStorage.setItem(quarantineStorageKey, cipherText);
+            appStorage.removeItem("cheque_print_history_encrypted");
           }
 
           // Clear tracking memory arrays and shift interface context to factory setup rules parameters
@@ -1736,8 +1759,8 @@
         // Scan browser cache cluster to index and compile a sorted array list of all quarantined logs
         const scanForQuarantinedLogs = () => {
           const archives = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
+          for (let i = 0; i < appStorage.length; i++) {
+            const key = appStorage.key(i);
             if (key && key.startsWith("cheque_print_history_quarantined_")) {
               // Extract structural timestamps out of the file key name string tokens
               const keyParts = key.split("_");
@@ -1767,7 +1790,7 @@
           setArchiveRecoveryError("");
 
           if (!selectedArchiveKey) return;
-          const cipherText = localStorage.getItem(selectedArchiveKey);
+          const cipherText = appStorage.getItem(selectedArchiveKey);
           if (!cipherText) return;
 
           const trimmedKey = archivePasswordInput.trim();
@@ -1816,7 +1839,7 @@
             );
 
             // Complete instant database cleanup sequence
-            localStorage.removeItem(selectedArchiveKey);
+            appStorage.removeItem(selectedArchiveKey);
             setArchivePasswordInput("");
             setSelectedArchiveKey("");
 
@@ -1941,7 +1964,7 @@
         // Synchronize configuration parameters when swapping default bank baselines
         const handleBankChange = (bankKey) => {
           setSelectedBank(bankKey);
-          const stored = localStorage.getItem(`cheque_preset_${bankKey}`);
+          const stored = appStorage.getItem(`cheque_preset_${bankKey}`);
           if (stored) {
             setFields(JSON.parse(stored));
           } else {
@@ -1967,7 +1990,7 @@
 
         // Save layout specifications locally
         const saveCustomPreset = () => {
-          localStorage.setItem(
+          appStorage.setItem(
             `cheque_preset_${selectedBank}`,
             JSON.stringify(fields),
           );
@@ -1981,7 +2004,7 @@
         const resetToDefault = () => {
           if (confirm("Reset current parameters back to factory settings?")) {
             setFields(DEFAULT_PRESETS[selectedBank].fields);
-            localStorage.removeItem(`cheque_preset_${selectedBank}`);
+            appStorage.removeItem(`cheque_preset_${selectedBank}`);
           }
         };
 
@@ -1998,9 +2021,32 @@
           return formattedSequence.split("");
         };
 
+        // Prints the cheque sheet. Desktop: through Electron, which reports the result.
+        // Browser: window.print() as before.
+        const printSheet = async () => {
+          if (window.desktop?.print) {
+            // Never fall back to the Windows dialog: no printer chosen means no print
+            if (!selectedPrinter)
+              return {
+                success: false,
+                reason: "Cancelled: no printer selected",
+              };
+            return window.desktop.print(selectedPrinter); // { success, reason }
+          }
+          await new Promise((resolve) => {
+            const done = () => {
+              window.removeEventListener("afterprint", done);
+              resolve();
+            };
+            window.addEventListener("afterprint", done);
+            window.print();
+          });
+          return { success: true };
+        };
+
         // Function to execute print and log the event with a Print logic
         // that holds the log entry in a "pending state" until manually verified
-        const handleExecutePrint = () => {
+        const handleExecutePrint = async () => {
           const currentTimeObj = new Date();
           const localizedTimeString = currentTimeObj.toLocaleString("en-IN", {
             timeZone: "Asia/Kolkata",
@@ -2015,23 +2061,62 @@
             Timestamp: localizedTimeString,
           };
 
-          // 3. Dialogue Lifecycle Capture Hook
-          const triggerVerificationModal = () => {
-            window.removeEventListener("afterprint", triggerVerificationModal);
-
-            // Instead of auto-saving, freeze the data record in holding state
+          // 3. Print, then hold the record until the user confirms the cheque came out right
+          if (printingRef.current) return; // a print is already in progress
+          printingRef.current = true;
+          try {
+            const result = await printSheet();
+            if (!result.success) {
+              // A cancelled dialog is normal; anything else is worth telling the user
+              if (result.reason && !/cancel/i.test(result.reason)) {
+                showToast(`Printing failed: ${result.reason}`, "error");
+              }
+              return;
+            }
             setPendingLogEntry(prospectiveLog);
             setShowVerifyToast(true);
-          };
+          } finally {
+            printingRef.current = false;
+          }
+        };
 
-          window.addEventListener("afterprint", triggerVerificationModal);
-          window.print();
+        // Print Cheque and Ctrl+P land here. Desktop: open the print panel. Browser: print as before.
+        const requestPrint = async () => {
+          if (!window.desktop?.printers) return handleExecutePrint();
+          setPrinterNote("");
+          setShowPrintPanel(true);
+          try {
+            const list = await window.desktop.printers();
+            setPrinters(list);
+            if (list.length === 0) {
+              setSelectedPrinter("");
+              setPrinterNote(
+                "No printers found. Install a printer in Windows and try again.",
+              );
+              return;
+            }
+            // Only a printer you chose before is preselected. Nothing is guessed.
+            const saved = appStorage.getItem(PRINTER_KEY);
+            const found = list.find((p) => p.name === saved);
+            setSelectedPrinter(found ? found.name : "");
+            if (saved && !found)
+              setPrinterNote(`"${saved}" isn't available. Choose a printer.`);
+          } catch {
+            setPrinterNote("Could not read the printer list.");
+          }
+        };
+
+        const confirmPrint = () => {
+          if (!selectedPrinter) return;
+          appStorage.setItem(PRINTER_KEY, selectedPrinter);
+          setShowPrintPanel(false);
+          handleExecutePrint();
         };
 
         // Ctrl+P (Cmd+P on a Mac) follows the same path as the Print Cheque button, so the cheque
         // is logged after you confirm it, and the A/C Payee switch resets.
         const printActionRef = React.useRef(null);
-        printActionRef.current = handleExecutePrint; // always the latest version, with the current inputs
+        printActionRef.current = requestPrint; // always the latest version, with the current inputs
         useEffect(() => {
           const onKeyDown = (e) => {
             const isPrintKey =
@@ -2041,14 +2126,14 @@
               (e.key.toLowerCase() === "p" || e.code === "KeyP");
             if (!isPrintKey) return;
             // Dashboard locked, or a print already waiting to be confirmed: leave the browser's default
-            if (isDashboardLocked || showVerifyToast) return;
+            if (isDashboardLocked || showVerifyToast || showPrintPanel) return;
             e.preventDefault();
             if (e.repeat) return; // holding the keys down must not open several print dialogs
             printActionRef.current();
           };
           window.addEventListener("keydown", onKeyDown);
           return () => window.removeEventListener("keydown", onKeyDown);
-        }, [isDashboardLocked, showVerifyToast]);
+        }, [isDashboardLocked, showVerifyToast, showPrintPanel]);
 
         // Executes if the user confirms the physical cheque leaf printed cleanly
         const confirmPrintSuccess = () => {
@@ -2062,7 +2147,7 @@
             JSON.stringify(finalUpdatedHistory),
             encryptionKey,
           ).toString();
-          localStorage.setItem("cheque_print_history_encrypted", ciphertext);
+          appStorage.setItem("cheque_print_history_encrypted", ciphertext);
 
           // Clear out UI notification alert anchors
           setShowVerifyToast(false);
@@ -2115,7 +2200,7 @@
             )
           ) {
             setPrintHistory([]);
-            localStorage.removeItem("cheque_print_history_encrypted");
+            appStorage.removeItem("cheque_print_history_encrypted");
           }
         };
 
@@ -2126,7 +2211,7 @@
 
           // Pull custom configurations from memory cache
           keysToBackup.forEach((bankKey) => {
-            const savedData = localStorage.getItem(`cheque_preset_${bankKey}`);
+            const savedData = appStorage.getItem(`cheque_preset_${bankKey}`);
             if (savedData) {
               backupPayload[bankKey] = JSON.parse(savedData);
             }
@@ -2170,7 +2255,7 @@
               // Validate and update values for each bank key found in the file
               Object.keys(importedPayload).forEach((bankKey) => {
                 if (BANK_KEYS.includes(bankKey)) {
-                  localStorage.setItem(
+                  appStorage.setItem(
                     `cheque_preset_${bankKey}`,
                     JSON.stringify(importedPayload[bankKey]),
                   );
@@ -2470,6 +2555,101 @@
           <React.Fragment>
             {/* WEB INTERFACE APP STRUCTURE */}
             <div className="min-h-screen flex flex-col no-print bg-slate-900 text-slate-100">
+              {/* PRINT PANEL: choose the printer, then print silently */}
+              {showPrintPanel && (
+                <div
+                  className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm no-print select-none animate-fade-in"
+                  onClick={() => setShowPrintPanel(false)}
+                  onKeyDown={(e) =>
+                    e.key === "Escape" && setShowPrintPanel(false)
+                  }
+                >
+                  <div
+                    className="w-[26rem] bg-slate-950 border border-slate-700 rounded-2xl p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] space-y-4"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                        <i data-lucide="printer" className="w-5 h-5"></i>
+                      </div>
+                      <div>
+                        <h4 className="text-base font-bold text-slate-100 tracking-tight">
+                          Print cheque
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Prints straight to the printer you choose.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Printer
+                      </label>
+                      <select
+                        value={selectedPrinter}
+                        onChange={(e) => {
+                          setSelectedPrinter(e.target.value);
+                          setPrinterNote("");
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500/60"
+                      >
+                        <option value="" disabled>
+                          Choose a printer…
+                        </option>
+                        {printers.map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.displayName}
+                            {p.isDefault ? " (Windows default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {printerNote && (
+                        <p className="mt-1.5 text-[11px] text-amber-400">
+                          {printerNote}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-[11px] font-mono text-slate-400 flex justify-between">
+                      <span>Paper</span>
+                      <span className="text-slate-200">
+                        A4 · Landscape · 100% · No margins
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => window.desktop?.printPreview?.()}
+                        className="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <i data-lucide="eye" className="w-3.5 h-3.5"></i>
+                        <span>Preview</span>
+                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowPrintPanel(false)}
+                          className="px-4 py-2 rounded-lg text-sm text-slate-300 border border-slate-700 hover:bg-slate-900 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          autoFocus
+                          onClick={confirmPrint}
+                          disabled={!selectedPrinter}
+                          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed font-bold px-5 py-2 rounded-lg text-sm text-white cursor-pointer"
+                        >
+                          Print
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* FLOATING HARDWARE VERIFICATION DOUBLE CHECK AUDIT OVERLAY */}
               {showVerifyToast && pendingLogEntry && (
                 <div className="fixed top-24 right-8 z-[90] w-[28rem] bg-slate-950 border-2 border-amber-500/80 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] rounded-2xl p-6 no-print animate-fade-in select-none">
@@ -2557,7 +2737,7 @@
                     {/* Quick Access Re-spool Utility Link Row */}
                     <div className="text-center pt-2 border-t border-slate-900 flex items-center justify-center">
                       <button
-                        onClick={() => window.print()}
+                        onClick={() => printSheet()}
                         className="text-xs text-blue-400 hover:text-blue-300 font-mono font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer group/spool"
                       >
                         <i
@@ -2612,9 +2792,20 @@
                       <span>Download Logs</span>
                     </button>
 
+                    {window.desktop?.printPreview && (
+                      <button
+                        onClick={() => window.desktop.printPreview()}
+                        className="bg-slate-800 hover:bg-slate-700 font-medium px-4 py-2 rounded-lg text-sm transition shadow-md flex items-center gap-1.5 cursor-pointer text-slate-200 border border-slate-700"
+                        title="Open the exact print layout as a PDF"
+                      >
+                        <i data-lucide="eye" className="w-4 h-4"></i>
+                        <span>Preview</span>
+                      </button>
+                    )}
+
                     {/* Active Spooler Trigger */}
                     <button
-                      onClick={handleExecutePrint}
+                      onClick={requestPrint}
                       className="bg-emerald-600 hover:bg-emerald-500 font-bold px-5 py-2 rounded-lg text-sm transition shadow-md flex items-center gap-1.5 cursor-pointer text-white"
                     >
                       <i data-lucide="printer" className="w-4 h-4"></i>
