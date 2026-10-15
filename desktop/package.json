@@ -1,0 +1,58 @@
+{
+  "name": "mal-cheque-printer",
+  "version": "1.0.0",
+  "description": "Internal Cheque Printing Suite",
+  "main": "electron/main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.mal.chequeprinter",
+    "productName": "MAL Cheque Printer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../index.html",
+        "to": "web/index.html"
+      },
+      {
+        "from": "../vendor",
+        "to": "web/vendor"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soumaghosh827/cheque-printer.git"
+  },
+  "keywords": [],
+  "author": "Maithan Alloys Limited",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/soumaghosh827/cheque-printer/issues"
+  },
+  "homepage": "https://github.com/soumaghosh827/cheque-printer#readme",
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  }
+}

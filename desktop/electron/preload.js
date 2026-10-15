@@ -25,4 +25,6 @@ contextBridge.exposeInMainWorld("desktop", {
   printers: () => ipcRenderer.invoke("print:printers"),
   print: (deviceName) => ipcRenderer.invoke("print:run", deviceName),
   printPreview: () => ipcRenderer.invoke("print:preview"),
+  protectText: (text) => ipcRenderer.sendSync("secure:protect", text),
+  unprotectText: (text) => ipcRenderer.sendSync("secure:unprotect", text),
 });

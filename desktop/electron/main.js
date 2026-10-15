@@ -1,7 +1,20 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  shell,
+  safeStorage,
+} = require("electron");
 const os = require("os");
 const path = require("path");
 const fs = require("fs");
+
+// One data folder, whether running from source or installed (so no data seems to vanish)
+app.setPath(
+  "userData",
+  path.join(app.getPath("appData"), "mal-cheque-printer"),
+);
 
 // Only one copy of the app may run, since two would overwrite each other's data file
 const gotLock = app.requestSingleInstanceLock();
@@ -119,6 +132,31 @@ ipcMain.handle("print:preview", async (e) => {
   return file;
 });
 
+// ---- Device-bound protection: only this Windows account on this PC can read it ----
+ipcMain.on("secure:protect", (e, text) => {
+  const plain = String(text);
+  e.returnValue = safeStorage.isEncryptionAvailable()
+    ? "enc:" + safeStorage.encryptString(plain).toString("base64")
+    : plain;
+});
+
+ipcMain.on("secure:unprotect", (e, text) => {
+  try {
+    e.returnValue =
+      typeof text === "string" && text.startsWith("enc:")
+        ? safeStorage.decryptString(Buffer.from(text.slice(4), "base64"))
+        : text; // plain text written before protection existed
+  } catch {
+    e.returnValue = null; // unreadable here (another PC or account)
+  }
+});
+
+// While developing, the web app sits two folders up (the repo root).
+// Packaged later, it is copied beside the app, so this same line will keep working.
+const webRoot = app.isPackaged
+  ? path.join(process.resourcesPath, "web")
+  : path.join(__dirname, "..", "..");
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1500,
@@ -126,7 +164,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: "#0b1120",
-    title: "Cheque Printer",
+    title: "MAL Cheque Printer",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true, // the page can't reach Node directly
@@ -134,7 +172,7 @@ function createWindow() {
       sandbox: true,
     },
   });
-  win.loadFile(path.join(__dirname, "..", "index.html"));
+  win.loadFile(path.join(webRoot, "index.html"));
 }
 
 app.whenReady().then(() => {

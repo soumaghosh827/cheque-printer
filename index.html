@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Enterprise Internal Cheque Printing Utility</title>
+    <title>MAL Cheque Printer</title>
     <!-- Tailwind CSS for UI controls styling -->
     <!-- Libraries, stored locally so the app works offline -->
     <script src="vendor/tailwind-browser.js"></script>
@@ -13,6 +13,7 @@
     <script src="vendor/xlsx.full.min.js"></script>
     <script src="vendor/lucide.js"></script>
     <script src="vendor/crypto-js.min.js"></script>
+    <script src="payees-seed.js"></script>
 
     <style>
       /* Global CSS Rules */
@@ -1472,6 +1473,36 @@
         el.setSelectionRange(pos, pos);
       }
 
+      const SUGGESTIONS_KEY = "suggestions"; // the names actually used, most recent first
+      const SEED_PAYEES = window.SEED_PAYEES || []; // starting list from payees-seed.js (desktop only)
+
+      function cleanPayeeName(name) {
+        return String(name || "")
+          .trim()
+          .replace(/\s+/g, " ");
+      }
+
+      // Used names first (most recent on top), then the starting list, without duplicates
+      function mergeSuggestions(used, seed) {
+        const seen = new Set();
+        const out = [];
+        [...used, ...seed].forEach((n) => {
+          const clean = cleanPayeeName(n);
+          const key = clean.toLowerCase();
+          if (clean && !seen.has(key)) {
+            seen.add(key);
+            out.push(clean);
+          }
+        });
+        return out;
+      }
+
+      // Device-bound protection (desktop only). In a browser these do nothing.
+      const protectText = (t) =>
+        window.desktop?.protectText ? window.desktop.protectText(t) : t;
+      const unprotectText = (t) =>
+        window.desktop?.unprotectText ? window.desktop.unprotectText(t) : t;
+
       function App() {
         // STATES START HERE --------------------------------------------------------------
 
@@ -1535,6 +1566,7 @@
         // Payee suggestion states
         const [suggestions, setSuggestions] = useState([]);
         const [showSuggestions, setShowSuggestions] = useState(false);
+        const [activeSuggestion, setActiveSuggestion] = useState(-1); // highlighted row, -1 = none
 
         // In-app print panel (desktop): choose the printer, then print silently
         const [showPrintPanel, setShowPrintPanel] = useState(false);
@@ -1555,21 +1587,54 @@
           );
         }, []);
 
-        const pickupSuggestions = () => {
-          const storedSuggestions = appStorage.getItem("suggestions");
-          console.log("storedSuggestions", storedSuggestions);
-          let parsed = [...suggestions];
-          // console.log(parsed);
+        const loadUsedPayees = () => {
           try {
-            parsed = [...parsed, ...JSON.parse(storedSuggestions || "[]")];
-            // console.log("parsed", parsed);
-          } catch (error) {
-            showToast("Error parsing suggestions", "error");
-          }
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setSuggestions(parsed);
+            const stored = appStorage.getItem(SUGGESTIONS_KEY);
+            const text = stored ? unprotectText(stored) : null;
+            const arr = JSON.parse(text || "[]");
+            return Array.isArray(arr) ? arr : [];
+          } catch {
+            return [];
           }
         };
+
+        const pickupSuggestions = () => {
+          if (!window.desktop) return; // desktop-only: nothing is read or stored in a browser
+          setSuggestions(mergeSuggestions(loadUsedPayees(), SEED_PAYEES));
+        };
+
+        // Remember a name that was printed and confirmed: it moves to the top of the list
+        const rememberPayee = (name) => {
+          if (!window.desktop) return; // suggestions are desktop-only
+          const clean = cleanPayeeName(name);
+          if (!clean) return;
+          const used = loadUsedPayees().filter(
+            (n) => cleanPayeeName(n).toLowerCase() !== clean.toLowerCase(),
+          );
+          const next = [clean, ...used].slice(0, 200); // keep the 200 most recent
+          appStorage.setItem(
+            SUGGESTIONS_KEY,
+            protectText(JSON.stringify(next)),
+          );
+          setSuggestions(mergeSuggestions(next, SEED_PAYEES));
+        };
+
+        // Names containing what is typed (starting with it first, then most recent), at most 50
+        const typedPayee = cleanPayeeName(payeeName).toLowerCase();
+        const payeeMatches = !showSuggestions
+          ? []
+          : suggestions
+              .filter((n) => n.toLowerCase().includes(typedPayee))
+              .sort(
+                (a, b) =>
+                  Number(b.toLowerCase().startsWith(typedPayee)) -
+                  Number(a.toLowerCase().startsWith(typedPayee)),
+              )
+              .slice(0, 50);
+        // No point showing the list when the only match is exactly what is typed
+        const payeeIsExact =
+          payeeMatches.length === 1 &&
+          payeeMatches[0].toLowerCase() === typedPayee;
 
         // Read LocalStorage configurations on startup
         useEffect(() => {
@@ -1680,6 +1745,8 @@
           placeAmountCaret(amountInputRef.current, amountCaretRef.current);
           amountCaretRef.current = null;
         });
+
+        useEffect(() => setActiveSuggestion(-1), [payeeName, showSuggestions]);
 
         // EFFECTS END HERE --------------------------------------------------------------
 
@@ -2184,6 +2251,7 @@
           // Clear out UI notification alert anchors
           setShowVerifyToast(false);
           setPendingLogEntry(null);
+          rememberPayee(pendingLogEntry["Payee Legal Name"]); // the name that was printed, not what is typed now
           setAcPayee(false); // the crossing is a per-cheque choice, so it resets after a confirmed print
         };
 
@@ -2892,43 +2960,68 @@
                             setShowSuggestions(true); // typing opens the popup again
                           }}
                           onBlur={() => setShowSuggestions(false)} // focus left the input: close it
+                          onFocus={() => {
+                            if (!programmaticFocusRef.current)
+                              setShowSuggestions(true);
+                          }}
                           onKeyDown={(e) => {
-                            if (e.key === "Escape") setShowSuggestions(false);
+                            if (e.key === "Escape") {
+                              setShowSuggestions(false);
+                              return;
+                            }
+                            if (payeeMatches.length === 0 || payeeIsExact)
+                              return;
+                            if (e.key === "ArrowDown") {
+                              e.preventDefault();
+                              setActiveSuggestion((i) =>
+                                Math.min(i + 1, payeeMatches.length - 1),
+                              );
+                            } else if (e.key === "ArrowUp") {
+                              e.preventDefault();
+                              setActiveSuggestion((i) => Math.max(i - 1, 0));
+                            } else if (
+                              e.key === "Enter" &&
+                              activeSuggestion >= 0
+                            ) {
+                              e.preventDefault();
+                              setPayeeName(payeeMatches[activeSuggestion]);
+                              setShowSuggestions(false);
+                            }
                           }}
                           disabled={showVerifyToast}
                           className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
                         />
 
                         {/* Suggestion Dropdown Popup */}
-                        {showSuggestions &&
-                          payeeName &&
-                          suggestions.length > 0 && (
-                            <div className="absolute z-50 left-0 right-0 mt-2 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/60 shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden">
-                              <ul
-                                onMouseDown={(e) => e.preventDefault()}
-                                className="max-h-60 overflow-y-auto divide-y divide-slate-800/50 pr-1 scrollbar-thin"
-                              >
-                                {suggestions
-                                  .filter((item) =>
-                                    item
-                                      .toLowerCase()
-                                      .includes(payeeName.toLowerCase()),
-                                  )
-                                  .map((item, index) => (
-                                    <li
-                                      key={index}
-                                      onClick={() => {
-                                        setPayeeName(item);
-                                        setShowSuggestions(false);
-                                      }}
-                                      className="p-3 text-sm text-slate-300 hover:bg-blue-600/90 hover:text-white cursor-pointer transition-all duration-150 first:rounded-t-xl last:rounded-b-xl"
-                                    >
-                                      {item}
-                                    </li>
-                                  ))}
-                              </ul>
-                            </div>
-                          )}
+                        {payeeMatches.length > 0 && !payeeIsExact && (
+                          <div className="absolute z-50 left-0 right-0 mt-2 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/60 shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden">
+                            <ul
+                              onMouseDown={(e) => e.preventDefault()}
+                              className="max-h-72 overflow-y-auto divide-y divide-slate-800/50 pr-1 scrollbar-thin"
+                            >
+                              {payeeMatches.map((item, index) => (
+                                <li
+                                  key={item}
+                                  ref={(el) => {
+                                    if (el && index === activeSuggestion)
+                                      el.scrollIntoView({ block: "nearest" });
+                                  }}
+                                  onClick={() => {
+                                    setPayeeName(item);
+                                    setShowSuggestions(false);
+                                  }}
+                                  className={`p-3 text-sm cursor-pointer transition-all duration-150 first:rounded-t-xl last:rounded-b-xl ${
+                                    index === activeSuggestion
+                                      ? "bg-blue-600/90 text-white"
+                                      : "text-slate-300 hover:bg-blue-600/90 hover:text-white"
+                                  }`}
+                                >
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
 
                         <WrapLimitControl
                           label="Payee Line 1 Limit"
