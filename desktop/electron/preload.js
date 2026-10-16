@@ -27,4 +27,5 @@ contextBridge.exposeInMainWorld("desktop", {
   printPreview: () => ipcRenderer.invoke("print:preview"),
   protectText: (text) => ipcRenderer.sendSync("secure:protect", text),
   unprotectText: (text) => ipcRenderer.sendSync("secure:unprotect", text),
+  version: ipcRenderer.sendSync("app:version"),
 });

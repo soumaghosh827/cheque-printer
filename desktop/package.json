@@ -1,6 +1,6 @@
 {
   "name": "mal-cheque-printer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Internal Cheque Printing Suite",
   "main": "electron/main.js",
   "scripts": {
@@ -33,10 +33,18 @@
         "nsis"
       ]
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "soumaghosh827",
+        "repo": "mal-cheque-printer-releases"
+      }
+    ],
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "MAL-Cheque-Printer-Setup-${version}.${ext}"
     }
   },
   "repository": {
@@ -54,5 +62,8 @@
   "devDependencies": {
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

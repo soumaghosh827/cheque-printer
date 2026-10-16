@@ -5,10 +5,12 @@ const {
   ipcMain,
   shell,
   safeStorage,
+  dialog,
 } = require("electron");
 const os = require("os");
 const path = require("path");
 const fs = require("fs");
+const { autoUpdater } = require("electron-updater");
 
 // One data folder, whether running from source or installed (so no data seems to vanish)
 app.setPath(
@@ -132,6 +134,10 @@ ipcMain.handle("print:preview", async (e) => {
   return file;
 });
 
+ipcMain.on("app:version", (e) => {
+  e.returnValue = app.getVersion();
+});
+
 // ---- Device-bound protection: only this Windows account on this PC can read it ----
 ipcMain.on("secure:protect", (e, text) => {
   const plain = String(text);
@@ -175,6 +181,39 @@ function createWindow() {
   win.loadFile(path.join(webRoot, "index.html"));
 }
 
+// ---- Updates: checked against the releases repo named in package.json ----
+function startUpdateChecks() {
+  autoUpdater.logger = console;
+  autoUpdater.autoDownload = true; // fetched quietly in the background
+  autoUpdater.autoInstallOnAppQuit = true; // "Later" means: installed when the app is closed
+
+  autoUpdater.on("error", (err) =>
+    console.error("Update check failed:", err?.message || err),
+  );
+
+  let asked = false;
+  autoUpdater.on("update-downloaded", async (info) => {
+    if (asked) return; // one question per session
+    asked = true;
+    const win = BrowserWindow.getAllWindows()[0];
+    const { response } = await dialog.showMessageBox(win, {
+      type: "info",
+      buttons: ["Restart now", "Later"],
+      defaultId: 1, // Enter picks "Later", so an update never interrupts a print by accident
+      cancelId: 1,
+      title: "Update ready",
+      message: `MAL Cheque Printer ${info.version} is ready to install.`,
+      detail:
+        "Your data is kept. Choose Later to install it the next time you close the app.",
+    });
+    if (response === 0) autoUpdater.quitAndInstall(true, true);
+  });
+
+  const check = () => autoUpdater.checkForUpdates().catch(() => {}); // offline is fine
+  setTimeout(check, 10 * 1000); // shortly after start
+  setInterval(check, 60 * 60 * 1000); // then every hour
+}
+
 app.whenReady().then(() => {
   // The packaged app has no menu bar; during development the default one stays,
   // so Ctrl+R (reload) and Ctrl+Shift+I (developer tools) keep working
@@ -182,6 +221,7 @@ app.whenReady().then(() => {
   loadStore();
   if (app.isPackaged) Menu.setApplicationMenu(null);
   createWindow();
+  if (app.isPackaged) startUpdateChecks(); // not while running from source
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
