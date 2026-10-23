@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MAL Cheque Printer Release test</title>
+    <title>MAL Cheque Printer</title>
     <!-- Tailwind CSS for UI controls styling -->
     <!-- Libraries, stored locally so the app works offline -->
     <script src="vendor/tailwind-browser.js"></script>
@@ -633,6 +633,15 @@
             cheque: { width: 203.5, height: 93 },
           },
         },
+      };
+
+      // Default state of cheque fields (on/off)
+      const DEFAULT_FIELDS_ON = {
+        payee: true,
+        amountWords: true,
+        amountNumeric: true,
+        date: true,
+        acPayee: false,
       };
 
       // Utility: Indian Numbering System Converter (Scales to Crores)
@@ -1438,6 +1447,30 @@
         requestAnimationFrame(tick);
       }
 
+      // Small on/off switch used next to each field's label (same look as the A/C Payee switch)
+      function FieldSwitch({ on, onChange, label, disabled }) {
+        return (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            aria-label={label}
+            title={on ? `Turn ${label} off` : `Turn ${label} on`}
+            disabled={disabled}
+            onClick={() => onChange(!on)}
+            className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+              on ? "bg-emerald-500" : "bg-slate-700"
+            }`}
+          >
+            <span
+              className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 ${
+                on ? "translate-x-[0.875rem]" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        );
+      }
+
       // Lighter "raised card" that fades in behind a left-panel section (takes no layout space)
       function FocusBackdrop({ on, inset = "-inset-2" }) {
         return (
@@ -1517,7 +1550,7 @@
         // Configuration Layout Positioning Matrices
         const [fields, setFields] = useState(DEFAULT_PRESETS.sbi.fields);
         const [activeFieldKey, setActiveFieldKey] = useState("payee");
-        const [acPayeeOn, setAcPayeeOn] = useState(false); // A/C Payee crossing: off by default, not saved in presets
+        const [fieldsOn, setFieldsOn] = useState(DEFAULT_FIELDS_ON);
         const [hasFocus, setHasFocus] = useState(false); // highlights on or off; Settings keep activeFieldKey
         const focusKey = hasFocus ? activeFieldKey : null;
 
@@ -1765,6 +1798,7 @@
         const amountInputRef = React.useRef(null);
         const amountCaretRef = React.useRef(null); // where the caret should go after the next render
         const [, setCaretTick] = useState(0); // forces a render, so the caret is restored even if the value doesn't change
+        const acPayeeOn = fieldsOn.acPayee;
 
         // Unified Custom-Themed UI Authentication Processing Engine
         const handleAuthSubmit = () => {
@@ -2024,7 +2058,10 @@
               afterScrollSettles(box, () => {
                 if (focusTimerRef.current !== token) return;
                 focusTimerRef.current = null;
-                const inputElement = box.querySelector("input, select, button");
+                const inputElement =
+                  box.querySelector(
+                    "input:not(:disabled), select, button:not([role='switch'])",
+                  ) || box.querySelector("button"); // A/C Payee: its only control is the switch
                 if (inputElement) {
                   programmaticFocusRef.current = true;
                   try {
@@ -2154,9 +2191,12 @@
           // 1. Construct the prospective log payload
           const prospectiveLog = {
             "Bank Template": selectedBank.toUpperCase(),
-            "Payee Legal Name": payeeName,
-            "Transaction Amount (₹)": parseFloat(amount) || 0,
-            "Cheque Date": chequeDate,
+            "Payee Legal Name": fieldsOn.payee ? payeeName : "—",
+            "Transaction Amount (₹)":
+              fieldsOn.amountNumeric || fieldsOn.amountWords
+                ? parseFloat(amount) || 0
+                : 0,
+            "Cheque Date": fieldsOn.date ? chequeDate : "—",
             Timestamp: localizedTimeString,
           };
 
@@ -2251,8 +2291,9 @@
           // Clear out UI notification alert anchors
           setShowVerifyToast(false);
           setPendingLogEntry(null);
-          rememberPayee(pendingLogEntry["Payee Legal Name"]); // the name that was printed, not what is typed now
-          setAcPayee(false); // the crossing is a per-cheque choice, so it resets after a confirmed print
+          if (fieldsOn.payee)
+            rememberPayee(pendingLogEntry["Payee Legal Name"]); // the name that was printed, not what is typed now
+          resetFieldsOn(); // reset to default after a confirmed print
         };
 
         // Executes if the hardware jammed or failed
@@ -2644,11 +2685,93 @@
                       posField("top", "Top (mm)"),
                     ];
 
-        // Turn the A/C Payee crossing on or off. Turning it off also drops its highlight
-        // (a highlighted ghost looks out of place); turning it on leaves focus as it is.
-        const setAcPayee = (on) => {
-          setAcPayeeOn(on);
-          if (!on && focusKey === "acPayee") setHasFocus(false);
+        // Turn any cheque field on or off. Turning it off also drops its highlight
+        const setFieldEnabled = (key, on) => {
+          setFieldsOn((prev) => ({ ...prev, [key]: on }));
+          if (!on && focusKey === key) setHasFocus(false);
+        };
+
+        const resetFieldsOn = () => setFieldsOn(DEFAULT_FIELDS_ON);
+
+        // Turn on just one of the four cheque fields and turn the other three off.
+        // A/C Payee is left as it is.
+        const showOnly = (key) => {
+          setFieldsOn((prev) => ({
+            ...prev,
+            payee: key === "payee",
+            amountWords: key === "amountWords",
+            amountNumeric: key === "amountNumeric",
+            date: key === "date",
+          }));
+          if (focusKey && focusKey !== key && focusKey !== "acPayee")
+            setHasFocus(false); // a highlighted field that just turned off looks out of place
+        };
+
+        // Turn all four cheque fields back on. A/C Payee is left as it is.
+        const allFieldsOn = () =>
+          setFieldsOn((prev) => ({
+            ...prev,
+            payee: true,
+            amountWords: true,
+            amountNumeric: true,
+            date: true,
+          }));
+
+        // Which quick button matches the current switches: one field alone, all four, or none
+        const quickKeys = ["payee", "amountNumeric", "amountWords", "date"];
+        const onKeys = quickKeys.filter((k) => fieldsOn[k]);
+        const quickMode =
+          onKeys.length === 4 ? "all" : onKeys.length === 1 ? onKeys[0] : null;
+
+        const handleAmountNumericalChange = (e) => {
+          const el = e.target;
+          const typed = el.value;
+          let caretChars = countAmountChars(typed, el.selectionStart);
+          let raw = typed.replace(/,/g, "");
+
+          // Backspace/Delete next to a comma only removes the comma, and the formatting
+          // would put it straight back. Delete the neighbouring digit instead.
+          const kind = e.nativeEvent.inputType;
+          if (
+            raw === amount &&
+            (kind === "deleteContentBackward" ||
+              kind === "deleteContentForward")
+          ) {
+            const at =
+              kind === "deleteContentBackward" ? caretChars - 1 : caretChars;
+            if (at >= 0 && at < raw.length) {
+              raw = raw.slice(0, at) + raw.slice(at + 1);
+              if (kind === "deleteContentBackward") caretChars = at;
+            }
+          }
+
+          // Keep the caret where the user was, whatever happens next
+          amountCaretRef.current = caretChars;
+          setCaretTick((t) => t + 1);
+
+          if (raw === "") {
+            setAmount("");
+            return;
+          }
+          // Digits only, one decimal point, max 2 decimal digits (paise)
+          if (!/^\d*\.?\d{0,2}$/.test(raw)) return;
+
+          const maxLimit = 99999999999; // 9,999 Crores baseline cap (rupees part)
+          const hasDot = raw.includes(".");
+          let [intPart, decPart = ""] = raw.split(".");
+          const rawInt = intPart;
+          intPart = intPart.replace(/^0+(?=\d)/, "") || "0";
+          if (rawInt === "") {
+            amountCaretRef.current += 1; // ".5" becomes "0.5"
+          } else {
+            // leading zeros were removed: the caret moves back by the ones before it
+            amountCaretRef.current -= Math.min(
+              amountCaretRef.current,
+              rawInt.length - intPart.length,
+            );
+          }
+          if (Number(intPart) > maxLimit) intPart = String(maxLimit);
+          setAmount(hasDot ? `${intPart}.${decPart}` : intPart);
         };
 
         return (
@@ -2944,14 +3067,51 @@
                       </h3>
 
                       <div
+                        className="flex flex-wrap gap-1.5"
+                        data-keep-focus="true"
+                      >
+                        {[
+                          ["payee", "Payee only"],
+                          ["amountNumeric", "Amount only"],
+                          ["amountWords", "Words only"],
+                          ["date", "Date only"],
+                          ["all", "All on"],
+                        ].map(([key, text]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            disabled={showVerifyToast}
+                            onClick={() =>
+                              key === "all" ? allFieldsOn() : showOnly(key)
+                            }
+                            className={`px-2 py-1 text-[11px] rounded-md border transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                              quickMode === key
+                                ? "border-emerald-600 bg-emerald-600/20 text-emerald-300"
+                                : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
+                            }`}
+                          >
+                            {text}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div
                         ref={payeeRef}
                         onFocus={() => selectFieldOnFocus("payee")}
                         data-keep-focus="true"
                         className={`relative isolate transition-all duration-200 ${focusKey === "payee" ? "z-10" : "z-0"}`}
                       >
-                        <label className="text-xs text-slate-300 block mb-1">
-                          Payee Name
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs text-slate-300">
+                            Payee Name
+                          </label>
+                          <FieldSwitch
+                            on={fieldsOn.payee}
+                            onChange={(v) => setFieldEnabled("payee", v)}
+                            label="Payee"
+                            disabled={showVerifyToast}
+                          />
+                        </div>
                         <input
                           type="text"
                           value={payeeName}
@@ -2988,7 +3148,7 @@
                               setShowSuggestions(false);
                             }
                           }}
-                          disabled={showVerifyToast}
+                          disabled={showVerifyToast || !fieldsOn.payee}
                           className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
                         />
 
@@ -3040,74 +3200,26 @@
                         data-keep-focus="true"
                         className="relative isolate transition-all duration-200"
                       >
-                        <label className="text-xs text-slate-300 block mb-1">
-                          Amount (Numerical ₹)
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs text-slate-300">
+                            Amount (Numerical ₹)
+                          </label>
+                          <FieldSwitch
+                            on={fieldsOn.amountNumeric}
+                            onChange={(v) =>
+                              setFieldEnabled("amountNumeric", v)
+                            }
+                            label="Numerical amount"
+                            disabled={showVerifyToast}
+                          />
+                        </div>
                         <input
                           ref={amountInputRef}
                           type="text"
                           value={formatAmountInput(amount)}
-                          onChange={(e) => {
-                            const el = e.target;
-                            const typed = el.value;
-                            let caretChars = countAmountChars(
-                              typed,
-                              el.selectionStart,
-                            );
-                            let raw = typed.replace(/,/g, "");
-
-                            // Backspace/Delete next to a comma only removes the comma, and the formatting
-                            // would put it straight back. Delete the neighbouring digit instead.
-                            const kind = e.nativeEvent.inputType;
-                            if (
-                              raw === amount &&
-                              (kind === "deleteContentBackward" ||
-                                kind === "deleteContentForward")
-                            ) {
-                              const at =
-                                kind === "deleteContentBackward"
-                                  ? caretChars - 1
-                                  : caretChars;
-                              if (at >= 0 && at < raw.length) {
-                                raw = raw.slice(0, at) + raw.slice(at + 1);
-                                if (kind === "deleteContentBackward")
-                                  caretChars = at;
-                              }
-                            }
-
-                            // Keep the caret where the user was, whatever happens next
-                            amountCaretRef.current = caretChars;
-                            setCaretTick((t) => t + 1);
-
-                            if (raw === "") {
-                              setAmount("");
-                              return;
-                            }
-                            // Digits only, one decimal point, max 2 decimal digits (paise)
-                            if (!/^\d*\.?\d{0,2}$/.test(raw)) return;
-
-                            const maxLimit = 99999999999; // 9,999 Crores baseline cap (rupees part)
-                            const hasDot = raw.includes(".");
-                            let [intPart, decPart = ""] = raw.split(".");
-                            const rawInt = intPart;
-                            intPart = intPart.replace(/^0+(?=\d)/, "") || "0";
-                            if (rawInt === "") {
-                              amountCaretRef.current += 1; // ".5" becomes "0.5"
-                            } else {
-                              // leading zeros were removed: the caret moves back by the ones before it
-                              amountCaretRef.current -= Math.min(
-                                amountCaretRef.current,
-                                rawInt.length - intPart.length,
-                              );
-                            }
-                            if (Number(intPart) > maxLimit)
-                              intPart = String(maxLimit);
-                            setAmount(
-                              hasDot ? `${intPart}.${decPart}` : intPart,
-                            );
-                          }}
+                          onChange={handleAmountNumericalChange}
                           inputMode="decimal"
-                          disabled={showVerifyToast}
+                          disabled={showVerifyToast || !fieldsOn.amountNumeric}
                           className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
                         />
                         <FocusBackdrop
@@ -3124,16 +3236,24 @@
                         data-keep-focus="true"
                         className="relative isolate transition-all duration-200"
                       >
-                        <label className="text-xs text-slate-300 block mb-1">
-                          Cheque Date
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs text-slate-300">
+                            Cheque Date
+                          </label>
+                          <FieldSwitch
+                            on={fieldsOn.date}
+                            onChange={(v) => setFieldEnabled("date", v)}
+                            label="Date"
+                            disabled={showVerifyToast}
+                          />
+                        </div>
                         {/* Relative layout frame container anchor */}
                         <div className="relative flex items-center justify-end">
                           <input
                             type="date"
                             value={chequeDate}
                             onChange={(e) => setChequeDate(e.target.value)}
-                            disabled={showVerifyToast}
+                            disabled={showVerifyToast || !fieldsOn.date}
                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 pr-10 text-sm text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
                           />
                           {/* High-fidelity custom Lucide vector icon overlay */}
@@ -3174,7 +3294,7 @@
                           aria-checked={acPayeeOn}
                           aria-label="A/C Payee crossing"
                           disabled={showVerifyToast}
-                          onClick={() => setAcPayee(!acPayeeOn)}
+                          onClick={() => setFieldEnabled("acPayee", !acPayeeOn)}
                           className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                             acPayeeOn ? "bg-emerald-500" : "bg-slate-700"
                           }`}
@@ -3200,9 +3320,19 @@
                         className="relative isolate space-y-4"
                       >
                         <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-                          <span className="block text-[10px] text-slate-400 font-mono uppercase">
-                            Amount in Words:
-                          </span>
+                          <div className="flex items-center justify-between">
+                            <span className="block text-[10px] text-slate-400 font-mono uppercase">
+                              Amount in Words:
+                            </span>
+                            <FieldSwitch
+                              on={fieldsOn.amountWords}
+                              onChange={(v) =>
+                                setFieldEnabled("amountWords", v)
+                              }
+                              label="Amount in words"
+                              disabled={showVerifyToast}
+                            />
+                          </div>
                           <span className="block mt-1 text-sm text-slate-200 leading-snug">
                             {generatedWords || "—"}
                           </span>
@@ -3274,7 +3404,7 @@
                           </span>
                           <button
                             type="button"
-                            onClick={() => setAcPayee(true)}
+                            onClick={() => setFieldEnabled("acPayee", true)}
                             onFocus={(e) => e.stopPropagation()}
                             disabled={showVerifyToast}
                             className="shrink-0 rounded-md border border-sky-400/40 bg-sky-400/20 hover:bg-sky-400/30 px-2 py-1 font-medium text-sky-100 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3853,7 +3983,8 @@
                                     : "Click to add the A/C Payee crossing"
                                 }
                                 onClick={() => {
-                                  if (!acPayeeOn) setAcPayeeOn(true);
+                                  if (!acPayeeOn)
+                                    setFieldEnabled("acPayee", true);
                                   focusAndScrollToInput("acPayee");
                                 }}
                               >
@@ -3896,59 +4027,99 @@
                               </div>
 
                               {/* Layer Element: Payee Name */}
+
                               {usePayeeSvg && (
-                                <BaselineLinesText
-                                  layout={payeePreviewLayout}
-                                  cfg={fields.payee}
-                                  cheque={fields.cheque}
-                                  color="#0f172a"
-                                  preview
-                                  active={focusKey === "payee"}
-                                  onClick={() => focusAndScrollToInput("payee")}
-                                />
+                                <div
+                                  style={
+                                    fieldsOn.payee
+                                      ? undefined
+                                      : { opacity: 0.25 }
+                                  }
+                                >
+                                  <BaselineLinesText
+                                    layout={payeePreviewLayout}
+                                    cfg={fields.payee}
+                                    cheque={fields.cheque}
+                                    color="#0f172a"
+                                    preview
+                                    active={focusKey === "payee"}
+                                    onClick={() =>
+                                      focusAndScrollToInput("payee")
+                                    }
+                                  />
+                                </div>
                               )}
 
                               {/* Layer Element: Amount Words */}
+
                               {useWordsSvg && (
-                                <BaselineLinesText
-                                  layout={wordsPreviewLayout}
-                                  cfg={fields.amountWords}
-                                  cheque={fields.cheque}
-                                  color="#0f172a"
-                                  preview
-                                  active={focusKey === "amountWords"}
-                                  onClick={() =>
-                                    focusAndScrollToInput("amountWords")
+                                <div
+                                  style={
+                                    fieldsOn.amountWords
+                                      ? undefined
+                                      : { opacity: 0.25 }
                                   }
-                                />
+                                >
+                                  <BaselineLinesText
+                                    layout={wordsPreviewLayout}
+                                    cfg={fields.amountWords}
+                                    cheque={fields.cheque}
+                                    color="#0f172a"
+                                    preview
+                                    active={focusKey === "amountWords"}
+                                    onClick={() =>
+                                      focusAndScrollToInput("amountWords")
+                                    }
+                                  />
+                                </div>
                               )}
 
                               {/* Layer Element: Numeric Amount Value */}
                               {fields.cheque && (
-                                <BoxCenteredText
-                                  text={formatChequeAmount(amount)}
-                                  cfg={fields.amountNumeric}
-                                  cheque={fields.cheque}
-                                  color="#0f172a"
-                                  preview
-                                  active={focusKey === "amountNumeric"}
-                                  onClick={() =>
-                                    focusAndScrollToInput("amountNumeric")
+                                <div
+                                  style={
+                                    fieldsOn.amountNumeric
+                                      ? undefined
+                                      : { opacity: 0.25 }
                                   }
-                                />
+                                >
+                                  <BoxCenteredText
+                                    text={formatChequeAmount(amount)}
+                                    cfg={fields.amountNumeric}
+                                    cheque={fields.cheque}
+                                    color="#0f172a"
+                                    preview
+                                    active={focusKey === "amountNumeric"}
+                                    onClick={() =>
+                                      focusAndScrollToInput("amountNumeric")
+                                    }
+                                  />
+                                </div>
                               )}
 
                               {/* Layer Element: Custom Split-box Date Characters Grid */}
                               {fields.cheque && (
-                                <BoxCenteredCells
-                                  chars={rawSplitDateArray.map((c) => c || "•")}
-                                  cfg={fields.date}
-                                  cheque={fields.cheque}
-                                  color="#0f172a"
-                                  preview
-                                  active={focusKey === "date"}
-                                  onClick={() => focusAndScrollToInput("date")}
-                                />
+                                <div
+                                  style={
+                                    fieldsOn.date
+                                      ? undefined
+                                      : { opacity: 0.25 }
+                                  }
+                                >
+                                  <BoxCenteredCells
+                                    chars={rawSplitDateArray.map(
+                                      (c) => c || "•",
+                                    )}
+                                    cfg={fields.date}
+                                    cheque={fields.cheque}
+                                    color="#0f172a"
+                                    preview
+                                    active={focusKey === "date"}
+                                    onClick={() =>
+                                      focusAndScrollToInput("date")
+                                    }
+                                  />
+                                </div>
                               )}
                             </div>
                           </div>
@@ -4024,7 +4195,7 @@
                   )}
 
                   {/* Payee Target Text */}
-                  {usePayeeSvg && (
+                  {usePayeeSvg && fieldsOn.payee && (
                     <BaselineLinesText
                       layout={payeeLayout}
                       cfg={fields.payee}
@@ -4034,7 +4205,7 @@
                   )}
 
                   {/* Tokenized Words */}
-                  {useWordsSvg && (
+                  {useWordsSvg && fieldsOn.amountWords && (
                     <BaselineLinesText
                       layout={wordsLayout}
                       cfg={fields.amountWords}
@@ -4044,7 +4215,7 @@
                   )}
 
                   {/* Cross Secured Numeric Amount Layout Line */}
-                  {fields.cheque && (
+                  {fields.cheque && fieldsOn.amountNumeric && (
                     <BoxCenteredText
                       text={formatChequeAmount(amount)}
                       cfg={fields.amountNumeric}
@@ -4054,7 +4225,7 @@
                   )}
 
                   {/* Split Space Date Sequences */}
-                  {fields.cheque && (
+                  {fields.cheque && fieldsOn.date && (
                     <BoxCenteredCells
                       chars={rawSplitDateArray}
                       cfg={fields.date}
