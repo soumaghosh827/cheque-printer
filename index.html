@@ -275,6 +275,34 @@
 
       const BANK_KEYS = ["sbi", "axis", "hdfc", "icici", "indusind"];
 
+      // Multi-preset storage: one list per bank, plus the last-applied preset id
+      const presetListKey = (bank) => `cheque_presets_v2_${bank}`;
+      const activePresetKey = (bank) => `cheque_active_preset_${bank}`;
+
+      const loadPresets = (bank) => {
+        try {
+          const raw = appStorage.getItem(presetListKey(bank));
+          if (raw) return JSON.parse(raw);
+          // One-time migration of the old single saved preset
+          const old = appStorage.getItem(`cheque_preset_${bank}`);
+          if (old) {
+            const migrated = [
+              {
+                id: "p_" + Date.now(),
+                name: "Saved layout",
+                fields: JSON.parse(old),
+              },
+            ];
+            appStorage.setItem(presetListKey(bank), JSON.stringify(migrated));
+            return migrated;
+          }
+        } catch (e) {}
+        return [];
+      };
+
+      const savePresetList = (bank, list) =>
+        appStorage.setItem(presetListKey(bank), JSON.stringify(list));
+
       // Master Application Configs
       const DEFAULT_ZOOM_FACTOR = 1.4;
       const PRINT_CANVAS = { width: 203, height: 89 }; // must match .cheque-canvas-print in the print CSS
@@ -1602,6 +1630,21 @@
         const [hasFocus, setHasFocus] = useState(false); // highlights on or off; Settings keep activeFieldKey
         const focusKey = hasFocus ? activeFieldKey : null;
 
+        const [presets, setPresets] = useState([]); // saved presets for the selected bank
+        const [activePresetId, setActivePresetId] = useState(null); // null = factory default
+
+        const [namingOpen, setNamingOpen] = useState(false); // inline "name this preset" box
+        const [newPresetName, setNewPresetName] = useState("");
+        const activePreset = presets.find((p) => p.id === activePresetId);
+        const presetEdited =
+          JSON.stringify(fields) !==
+          JSON.stringify(
+            activePreset
+              ? activePreset.fields
+              : DEFAULT_PRESETS[selectedBank].fields,
+          );
+        const [showPresetManager, setShowPresetManager] = useState(false);
+
         const [printHistory, setPrintHistory] = useState(
           () => JSON.parse(appStorage.getItem("cheque_print_history")) || [],
         );
@@ -1743,8 +1786,7 @@
 
         // Read LocalStorage configurations on startup
         useEffect(() => {
-          const stored = appStorage.getItem(`cheque_preset_sbi`);
-          if (stored) setFields(JSON.parse(stored));
+          handleBankChange("sbi");
           pickupSuggestions();
         }, []);
 
@@ -2183,14 +2225,31 @@
         }, []);
 
         // Synchronize configuration parameters when swapping default bank baselines
+        const applyPreset = (id, bank = selectedBank, list = presets) => {
+          const preset = list.find((p) => p.id === id);
+          setActivePresetId(preset ? preset.id : null);
+          setFields(
+            JSON.parse(
+              JSON.stringify(
+                preset ? preset.fields : DEFAULT_PRESETS[bank].fields,
+              ),
+            ),
+          );
+          appStorage.setItem(
+            activePresetKey(bank),
+            preset ? preset.id : "default",
+          );
+        };
+
         const handleBankChange = (bankKey) => {
           setSelectedBank(bankKey);
-          const stored = appStorage.getItem(`cheque_preset_${bankKey}`);
-          if (stored) {
-            setFields(JSON.parse(stored));
-          } else {
-            setFields(DEFAULT_PRESETS[bankKey].fields);
-          }
+          const list = loadPresets(bankKey);
+          setPresets(list);
+          applyPreset(
+            appStorage.getItem(activePresetKey(bankKey)),
+            bankKey,
+            list,
+          );
         };
 
         // Handle calibration parameter updating
@@ -2210,22 +2269,64 @@
         };
 
         // Save layout specifications locally
-        const saveCustomPreset = () => {
-          appStorage.setItem(
-            `cheque_preset_${selectedBank}`,
-            JSON.stringify(fields),
+        const persistPresets = (list) => {
+          savePresetList(selectedBank, list);
+          setPresets(list);
+        };
+
+        // Save current layout as a brand new named preset and make it active
+        const saveAsNewPreset = (name) => {
+          const clean = (name || "").trim() || `Preset ${presets.length + 1}`;
+          const newPreset = {
+            id: "p_" + Date.now(),
+            name: clean,
+            fields: JSON.parse(JSON.stringify(fields)),
+          };
+          const list = [...presets, newPreset];
+          persistPresets(list);
+          applyPreset(newPreset.id, selectedBank, list);
+          showToast(`Saved as "${clean}"`, "success");
+        };
+
+        // Overwrite the currently active preset with the current layout
+        const updateActivePreset = () => {
+          if (!activePresetId) {
+            showToast(
+              "Factory default can't be overwritten. Use Save as new.",
+              "warning",
+            );
+            return;
+          }
+          const list = presets.map((p) =>
+            p.id === activePresetId
+              ? { ...p, fields: JSON.parse(JSON.stringify(fields)) }
+              : p,
           );
-          showToast(
-            `Presets for ${selectedBank.toUpperCase()} saved successfully!`,
-            "success",
+          persistPresets(list);
+          const name = presets.find((p) => p.id === activePresetId)?.name;
+          showToast(`Updated "${name}"`, "success");
+        };
+
+        const renamePreset = (id, name) => {
+          const clean = (name || "").trim();
+          if (!clean) return;
+          persistPresets(
+            presets.map((p) => (p.id === id ? { ...p, name: clean } : p)),
           );
+        };
+
+        const deletePreset = (id) => {
+          const target = presets.find((p) => p.id === id);
+          if (!target || !confirm(`Delete preset "${target.name}"?`)) return;
+          const list = presets.filter((p) => p.id !== id);
+          persistPresets(list);
+          if (id === activePresetId) applyPreset(null, selectedBank, list);
         };
 
         // Reset layout calibrations to hardware factory values
         const resetToDefault = () => {
           if (confirm("Reset current parameters back to factory settings?")) {
-            setFields(DEFAULT_PRESETS[selectedBank].fields);
-            appStorage.removeItem(`cheque_preset_${selectedBank}`);
+            applyPreset(null);
           }
         };
 
@@ -2432,18 +2533,19 @@
 
         // Gathers all bank layouts from localStorage and compiles a downloadable backup file
         const exportConfigurationsToFile = () => {
-          const keysToBackup = BANK_KEYS;
-          const backupPayload = {};
+          const presetsByBank = {};
 
-          // Pull custom configurations from memory cache
-          keysToBackup.forEach((bankKey) => {
-            const savedData = appStorage.getItem(`cheque_preset_${bankKey}`);
-            if (savedData) {
-              backupPayload[bankKey] = JSON.parse(savedData);
+          // Pull every saved preset list (v2) for each bank
+          BANK_KEYS.forEach((bankKey) => {
+            const list = loadPresets(bankKey);
+            if (list.length > 0) {
+              presetsByBank[bankKey] = list;
             }
           });
 
-          if (Object.keys(backupPayload).length === 0) {
+          const backupPayload = { version: 2, presets: presetsByBank };
+
+          if (Object.keys(presetsByBank).length === 0) {
             showToast(
               "No custom presets parameters found. Default presets do not need to be exported.",
               "warning",
@@ -2478,15 +2580,45 @@
               const importedPayload = JSON.parse(e.target.result);
               let validImportCount = 0;
 
-              // Validate and update values for each bank key found in the file
-              Object.keys(importedPayload).forEach((bankKey) => {
-                if (BANK_KEYS.includes(bankKey)) {
-                  appStorage.setItem(
-                    `cheque_preset_${bankKey}`,
-                    JSON.stringify(importedPayload[bankKey]),
-                  );
-                  validImportCount++;
+              // v2 files keep lists under "presets"; old files are { bank: fields }
+              const isV2 = importedPayload.version === 2;
+              const source = isV2
+                ? importedPayload.presets || {}
+                : importedPayload;
+
+              Object.keys(source).forEach((bankKey) => {
+                if (!BANK_KEYS.includes(bankKey)) return;
+
+                // Normalise incoming data into a list of valid presets
+                let incoming = [];
+                if (isV2) {
+                  incoming = (
+                    Array.isArray(source[bankKey]) ? source[bankKey] : []
+                  ).filter((p) => p && p.id && p.name && p.fields);
+                } else if (
+                  source[bankKey] &&
+                  typeof source[bankKey] === "object"
+                ) {
+                  incoming = [
+                    {
+                      id: "p_" + Date.now() + "_" + bankKey,
+                      name: "Imported layout",
+                      fields: source[bankKey],
+                    },
+                  ];
                 }
+                if (incoming.length === 0) return;
+
+                // Merge: same id replaced, everything else kept
+                const merged = [...loadPresets(bankKey)];
+                incoming.forEach((preset) => {
+                  const idx = merged.findIndex((p) => p.id === preset.id);
+                  if (idx >= 0) merged[idx] = preset;
+                  else merged.push(preset);
+                });
+
+                savePresetList(bankKey, merged);
+                validImportCount++;
               });
 
               if (validImportCount > 0) {
@@ -3041,10 +3173,128 @@
           );
         }
 
+        // Modal to rename, delete and apply presets of the selected bank
+        function PresetManagerModal({
+          list,
+          activeId,
+          onApply,
+          onRename,
+          onDelete,
+          onClose,
+        }) {
+          return (
+            <div
+              className="fixed inset-0 z-[96] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm no-print select-none animate-fade-in"
+              onClick={onClose}
+              onKeyDown={(e) => e.key === "Escape" && onClose()}
+            >
+              <div
+                className="w-[28rem] max-w-[92vw] bg-slate-950 border border-slate-700 rounded-2xl p-5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] space-y-3"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <h4 className="text-base font-bold text-slate-100 tracking-tight">
+                    Presets ·{" "}
+                    {DEFAULT_PRESETS[selectedBank].name.replace(
+                      /\s*\(.*\)\s*$/,
+                      "",
+                    )}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-2 text-slate-400 hover:text-white text-lg leading-none cursor-pointer"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+                  <div className="flex items-center gap-2 p-2 rounded-lg border border-slate-800 bg-slate-900">
+                    <span className="flex-1 text-sm text-slate-400">
+                      Factory default
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onApply(null)}
+                      className="text-xs px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                    >
+                      {activeId ? "Apply" : "Applied"}
+                    </button>
+                  </div>
+
+                  {list.length === 0 && (
+                    <p className="text-xs text-slate-500 p-2">
+                      No saved presets yet. Use "Save as new" to create one.
+                    </p>
+                  )}
+
+                  {list.map((p) => (
+                    <div
+                      key={p.id}
+                      className={`flex items-center gap-2 p-2 rounded-lg border ${
+                        p.id === activeId
+                          ? "border-emerald-600 bg-emerald-600/10"
+                          : "border-slate-800 bg-slate-900"
+                      }`}
+                    >
+                      <input
+                        defaultValue={p.name}
+                        onBlur={(e) => {
+                          if (
+                            e.target.value.trim() &&
+                            e.target.value.trim() !== p.name
+                          )
+                            onRename(p.id, e.target.value);
+                          else e.target.value = p.name;
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+                        className="flex-1 min-w-0 bg-transparent border border-transparent hover:border-slate-700 focus:border-blue-500 rounded-md px-2 py-1 text-sm text-slate-100 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onApply(p.id)}
+                        className="text-xs px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                      >
+                        {p.id === activeId ? "Applied" : "Apply"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(p.id)}
+                        className="px-1.5 text-slate-500 hover:text-red-400 cursor-pointer"
+                        aria-label="Delete preset"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Click a name to edit it. Press Enter to confirm.
+                </p>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <React.Fragment>
             {/* WEB INTERFACE APP STRUCTURE */}
             <div className="min-h-screen flex flex-col no-print bg-slate-900 text-slate-100">
+              {showPresetManager && (
+                <PresetManagerModal
+                  list={presets}
+                  activeId={activePresetId}
+                  onApply={(id) => {
+                    applyPreset(id);
+                    setShowPresetManager(false);
+                  }}
+                  onRename={renamePreset}
+                  onDelete={deletePreset}
+                  onClose={() => setShowPresetManager(false)}
+                />
+              )}
               {showPayeeManager && (
                 <PayeeManagerModal
                   names={suggestions}
@@ -3358,6 +3608,101 @@
                         <option value="icici">ICICI Bank Ltd</option>
                         <option value="indusind">IndusInd Bank Ltd</option>
                       </select>
+                      <div className="pt-3 border-t border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                            Saved Presets
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowPresetManager(true)}
+                            className="text-[10px] px-2 py-0.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                          >
+                            Manage
+                          </button>
+                          <span className="text-[10px] text-emerald-400 font-mono truncate max-w-[60%]">
+                            Applied:{" "}
+                            {activePreset
+                              ? activePreset.name
+                              : "Factory default"}
+                            {presetEdited ? " •" : ""}
+                          </span>
+                        </div>
+
+                        <select
+                          value={activePresetId || "default"}
+                          onChange={(e) =>
+                            applyPreset(
+                              e.target.value === "default"
+                                ? null
+                                : e.target.value,
+                            )
+                          }
+                          disabled={showVerifyToast}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="default">Factory default</option>
+                          {presets.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </select>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={updateActivePreset}
+                            disabled={
+                              showVerifyToast ||
+                              !activePresetId ||
+                              !presetEdited
+                            }
+                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded-lg font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Update preset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNamingOpen(true)}
+                            disabled={showVerifyToast}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-2 rounded-lg font-medium transition border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Save as new
+                          </button>
+                        </div>
+
+                        {namingOpen && (
+                          <div className="flex gap-2">
+                            <input
+                              autoFocus
+                              value={newPresetName}
+                              onChange={(e) => setNewPresetName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  saveAsNewPreset(newPresetName);
+                                  setNewPresetName("");
+                                  setNamingOpen(false);
+                                }
+                                if (e.key === "Escape") setNamingOpen(false);
+                              }}
+                              placeholder="e.g. Current A/c - leaf type A"
+                              className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                saveAsNewPreset(newPresetName);
+                                setNewPresetName("");
+                                setNamingOpen(false);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 rounded-lg font-medium"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Section: Transaction Ledger Elements */}
@@ -4014,14 +4359,7 @@
                           <span className="block text-[10px] text-slate-400 font-mono uppercase tracking-wider">
                             Preset Settings
                           </span>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={saveCustomPreset}
-                              className="bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-lg font-medium transition text-center cursor-pointer shadow-md flex items-center justify-center gap-1.5"
-                            >
-                              <i data-lucide="save" className="w-3.5 h-3.5"></i>
-                              <span>Save Preset</span>
-                            </button>
+                          <div className="grid grid-cols-1 gap-2">
                             <button
                               onClick={resetToDefault}
                               className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs py-2.5 rounded-lg font-medium transition text-center cursor-pointer border border-slate-700/60 flex items-center justify-center gap-1.5"
@@ -4060,7 +4398,10 @@
                               <input
                                 type="file"
                                 accept=".json"
-                                onChange={importConfigurationsFromFile}
+                                onChange={(e) => {
+                                  importConfigurationsFromFile(e);
+                                  e.target.value = "";
+                                }}
                                 className="hidden"
                               />
                             </label>
@@ -4321,8 +4662,8 @@
                                   }}
                                   className={`uppercase tracking-widest my-0.5 ${
                                     acPayeeOn
-                                      ? "text-slate-900"
-                                      : "text-slate-500"
+                                      ? "text-zinc-900"
+                                      : "text-zinc-500"
                                   }`}
                                 >
                                   {acPayeeOn ? "A/C Payee" : "+ A/C Payee"}
@@ -4605,7 +4946,6 @@
                     </div>
                   </div>
 
-                  {/* Modern, Clean Operational Helper Box */}
                   {/* Modern, Clean Operational Helper Box */}
                   <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 flex items-center gap-2 max-w-full overflow-hidden select-none">
                     {/* Sleek Lucide Vector Vector Help Icon Upgrade */}
