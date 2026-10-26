@@ -27,6 +27,47 @@
         padding: 0;
       }
 
+      :root {
+        --sb-track: #020617;
+        --sb-thumb: #334155;
+        --sb-thumb-hover: #475569;
+        --stage-bg: #0b1120;
+        --stage-vignette: rgba(0, 0, 0, 0.45);
+        --stage-glow: rgba(56, 189, 248, 0.1);
+        --stage-dot: rgba(148, 163, 184, 0.1);
+      }
+
+      /* LIGHT THEME: remaps the slate scale. Dark stays the default (no change). */
+      :root[data-theme="light"] {
+        --color-slate-950: #ffffff; /* header, sidebar, panels */
+        --color-slate-900: #f1f5f9; /* main background */
+        --color-slate-800: #e2e8f0; /* borders, badges */
+        --color-slate-700: #cbd5e1;
+        --color-slate-600: #94a3b8;
+        --color-slate-500: #64748b;
+        --color-slate-400: #475569; /* secondary text */
+        --color-slate-300: #334155;
+        --color-slate-200: #1e293b;
+        --color-slate-100: #0f172a; /* headings */
+        color-scheme: light;
+        --sb-track: #ffffff;
+        --sb-thumb: #cbd5e1;
+        --sb-thumb-hover: #94a3b8;
+        --stage-bg: #e2e8f0;
+        --stage-vignette: rgba(15, 23, 42, 0.1);
+        --stage-glow: rgba(56, 189, 248, 0.18);
+        --stage-dot: rgba(71, 85, 105, 0.18);
+        /* Accent text shades, darkened so they stay readable on light panels */
+        --color-emerald-300: #047857;
+        --color-emerald-400: #059669;
+        --color-amber-400: #b45309;
+        --color-red-400: #dc2626;
+        --color-blue-300: #1d4ed8;
+        --color-blue-400: #2563eb;
+        --color-sky-100: #075985;
+        --color-sky-200: #0369a1;
+      }
+
       /* SCREEN PREVIEW CONTEXT ONLY */
       @media screen {
         html,
@@ -111,7 +152,7 @@
         .custom-sidebar-scroll {
           /* Standard cross-browser W3C baseline controls */
           scrollbar-width: thin !important;
-          scrollbar-color: #334155 #020617 !important; /* Thumb: slate-700, Track: slate-950 */
+          scrollbar-color: var(--sb-thumb) var(--sb-track) !important; /* Thumb: slate-700, Track: slate-950 */
         }
 
         /* Modern Webkit layout engine specifications (Chrome, Safari, Edge) */
@@ -121,18 +162,24 @@
         }
 
         .custom-sidebar-scroll::-webkit-scrollbar-track {
-          background: #020617 !important; /* Match slate-950 panel baseline background */
+          background: var(
+            --sb-track
+          ) !important; /* Match slate-950 panel baseline background */
           border-radius: 0px !important;
         }
 
         .custom-sidebar-scroll::-webkit-scrollbar-thumb {
-          background: #334155 !important; /* Match slate-700 interface lines */
+          background: var(
+            --sb-thumb
+          ) !important; /* Match slate-700 interface lines */
           border-radius: 9999px !important; /* High-rounded capsule aesthetic */
-          border: 1px solid #020617 !important; /* Adds clear separation spacing buffer */
+          border: 1px solid var(--sb-track) !important; /* Adds clear separation spacing buffer */
         }
 
         .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover {
-          background: #475569 !important; /* Glow accent highlights to slate-600 on active hover interaction paths */
+          background: var(
+            --sb-thumb-hover
+          ) !important; /* Glow accent highlights to slate-600 on active hover interaction paths */
         }
 
         /* Turns the native browser button invisible but keeps its click hitbox fully functional */
@@ -260,13 +307,13 @@
         all: "All Components",
       };
 
-      // Dark "studio" backdrop for the preview: vignette, soft spotlight glow and a faint dot grid
+      // Dark/Light "studio" backdrop for the preview: vignette, soft spotlight glow and a faint dot grid
       const STAGE_BG = {
-        backgroundColor: "#0b1120",
+        backgroundColor: "var(--stage-bg)",
         backgroundImage: [
-          "radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%)",
-          "radial-gradient(ellipse 60% 55% at 50% 50%, rgba(56,189,248,0.10), rgba(56,189,248,0) 70%)",
-          "radial-gradient(rgba(148,163,184,0.10) 1px, transparent 1px)",
+          "radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, var(--stage-vignette) 100%)",
+          "radial-gradient(ellipse 60% 55% at 50% 50%, var(--stage-glow), rgba(56,189,248,0) 70%)",
+          "radial-gradient(var(--stage-dot) 1px, transparent 1px)",
         ].join(", "),
         backgroundSize: "auto, auto, 22px 22px",
       };
@@ -1484,6 +1531,7 @@
       }
 
       const PRINTER_KEY = "cheque_printer_name"; // the chosen printer, remembered between runs
+      const THEME_KEY = "cheque_theme"; // "light" or "dark", remembered between runs
 
       // Counts the digits and decimal points before position `pos`. Commas don't count,
       // so they can appear and disappear while formatting without moving the caret.
@@ -1556,6 +1604,10 @@
 
         const [printHistory, setPrintHistory] = useState(
           () => JSON.parse(appStorage.getItem("cheque_print_history")) || [],
+        );
+
+        const [theme, setTheme] = useState(() =>
+          appStorage.getItem(THEME_KEY) === "light" ? "light" : "dark",
         );
 
         // Global shift offset matrix for multi-element configuration tracking
@@ -1714,6 +1766,12 @@
           };
         }, [showVerifyToast, pendingLogEntry]);
 
+        // Apply the theme to the page and remember it
+        useEffect(() => {
+          document.documentElement.dataset.theme = theme;
+          appStorage.setItem(THEME_KEY, theme);
+        }, [theme]);
+
         // Continuous Lucide Icon DOM Rendering Engine
         useEffect(() => {
           if (window.lucide) {
@@ -1721,6 +1779,7 @@
           }
         }, [
           selectedBank,
+          theme,
           showVerifyToast,
           printHistory,
           activeFieldKey,
@@ -2898,7 +2957,7 @@
                       className={`px-2 py-1 text-[11px] rounded-md border transition cursor-pointer ${
                         sortBy === key
                           ? "border-emerald-600 bg-emerald-600/20 text-emerald-300"
-                          : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
+                          : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-slate-100"
                       }`}
                     >
                       {text}
@@ -2937,7 +2996,7 @@
                           type="button"
                           onClick={() => onSelect(n)}
                           title="Use this payee"
-                          className="flex-1 min-w-0 text-left truncate cursor-pointer hover:text-white"
+                          className="flex-1 min-w-0 text-left truncate cursor-pointer hover:text-slate-100"
                         >
                           {n}
                         </button>
@@ -3247,6 +3306,26 @@
                       </button>
                     )}
 
+                    {/* Light / Dark theme toggle */}
+                    <button
+                      key={theme}
+                      type="button"
+                      onClick={() =>
+                        setTheme(theme === "dark" ? "light" : "dark")
+                      }
+                      className="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg transition shadow-md flex items-center justify-center cursor-pointer text-slate-200 border border-slate-700"
+                      title={
+                        theme === "dark"
+                          ? "Switch to light theme"
+                          : "Switch to dark theme"
+                      }
+                    >
+                      <i
+                        data-lucide={theme === "dark" ? "sun" : "moon"}
+                        className="w-4 h-4"
+                      ></i>
+                    </button>
+
                     {/* Active Spooler Trigger */}
                     <button
                       onClick={requestPrint}
@@ -3308,7 +3387,7 @@
                             className={`px-2 py-1 text-[11px] rounded-md border transition disabled:opacity-40 disabled:cursor-not-allowed ${
                               quickMode === key
                                 ? "border-emerald-600 bg-emerald-600/20 text-emerald-300"
-                                : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
+                                : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-slate-100"
                             }`}
                           >
                             {text}
