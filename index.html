@@ -89,8 +89,8 @@
 
         .a4-screen-wrapper {
           /* The stage is now exactly the size of the cheque preview (no A4 sheet) */
-          width: calc(210mm * (50vw / 297mm)) !important;
-          height: calc(96.2mm * (50vw / 297mm)) !important;
+          width: calc(var(--cheque-w, 203mm) * (50vw / 297mm)) !important;
+          height: calc(var(--cheque-h, 89mm) * (50vw / 297mm)) !important;
           flex-shrink: 0 !important;
           flex-grow: 0 !important;
           position: relative !important;
@@ -102,18 +102,16 @@
         }
 
         .cheque-canvas-screen {
-          width: calc(210mm * (50vw / 297mm)) !important;
-          height: calc(96.2mm * (50vw / 297mm)) !important;
+          width: calc(var(--cheque-w, 203mm) * (50vw / 297mm)) !important;
+          height: calc(var(--cheque-h, 89mm) * (50vw / 297mm)) !important;
           position: relative !important;
           box-sizing: border-box !important;
-          /* Lock aspect ratio of the cheque body inside the A4 paper */
-          aspect-ratio: 203 / 89 !important;
         }
 
         /* Target the new inner layout wrapper to translate measurements down dynamically */
         .cheque-canvas-screen .global-offset-wrapper {
-          width: 210mm !important;
-          height: 96.2mm !important;
+          width: var(--cheque-w, 203mm) !important;
+          height: var(--cheque-h, 89mm) !important;
           position: absolute !important;
           top: 0 !important;
           left: 0 !important;
@@ -425,8 +423,8 @@
           name: "Axis Bank (Standard CTS-2010)",
           fields: {
             acPayee: {
-              top: -0.4,
-              left: -24,
+              top: 1.1,
+              left: -12.5,
               width: 40.0,
               fontSize: 2,
               fontFamily: "Arial",
@@ -435,14 +433,14 @@
               angle: -45,
             },
             payee: {
-              lineTop: 22.5,
+              lineTop: 23.5,
               lineThickness: 0.5,
-              textLeft: 7,
-              line2Left: 0,
+              textLeft: 17,
+              line2Left: 10,
               textRight: 60,
               textRight2: 30,
-              textHeight: 2.5,
-              gapAbove: 1,
+              textHeight: 2.2,
+              gapAbove: 1.5,
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
@@ -450,15 +448,15 @@
               fontWeight: "normal",
             },
             amountWords: {
-              lineTop: 31,
+              lineTop: 32,
               line2Top: 40.5,
               lineThickness: 0.5,
-              textLeft: 20,
-              line2Left: 0,
+              textLeft: 30,
+              line2Left: 10,
               textRight: 30,
               textRight2: 80,
-              textHeight: 2.5,
-              gapAbove: 1,
+              textHeight: 2.2,
+              gapAbove: 1.5,
               gapBelow: 1,
               nudgeX: 0,
               nudgeY: 0,
@@ -466,8 +464,8 @@
               fontWeight: "normal",
             },
             amountNumeric: {
-              boxRight: 11.5,
-              boxTop: 30.5,
+              boxRight: 10,
+              boxTop: 32.5,
               boxWidth: 38,
               boxHeight: 8.5,
               heightRatio: 0.28,
@@ -478,9 +476,9 @@
             },
             date: {
               boxRight: 10.5,
-              boxTop: 2,
-              boxWidth: 45,
-              boxHeight: 6,
+              boxTop: 5,
+              boxWidth: 40,
+              boxHeight: 5,
               cells: 8,
               heightRatio: 0.4,
               nudgeX: 0,
@@ -983,7 +981,7 @@
         };
       }
 
-      // ---- Printed-line text layout (payee now, amount in words later) ----
+      // ---- Printed-line text layout (used for payee and amount in words) ----
       // Places up to two lines of text relative to a printed fill-in line on the cheque:
       //  line 1 sits `gapAbove` above the line; line 2 hangs `gapBelow` under it
       //  (or sits above its own printed line when cfg.line2Top is set).
@@ -1030,9 +1028,12 @@
 
         // Wrap at the real size: the character limit and the available width both apply.
         // The first word always stays on line 1. The "**" markers are included in the width.
+        // A field with no second printed line (basically payee) stays on one row unless singleLine is false.
+        const singleLine =
+          cfg.line2Top === undefined && cfg.singleLine !== false;
         const words = clean.split(" ");
-        let line1 = words[0];
-        let i = 1;
+        let line1 = singleLine ? clean : words[0];
+        let i = singleLine ? words.length : 1;
         let wrappedBy = null;
         for (; i < words.length; i++) {
           const cand = `${line1} ${words[i]}`;
@@ -1449,6 +1450,394 @@
         );
       }
 
+      // Calibration sheet: A4 landscape marks drawn in true mm.
+      // Printed through the normal print path, so it shows what a real cheque print does.
+      function CalibrationSheet() {
+        const W = 297;
+        const H = 210;
+        const CW = PRINT_CANVAS.width;
+        const CH = PRINT_CANVAS.height;
+        const ox = W - CW; // cheque area left edge (flush right)
+        const oy = (H - CH) / 2; // cheque area top edge (vertically centred)
+        const line = { stroke: "#000", strokeWidth: 0.2, fill: "none" };
+        const label = { fill: "#000", fontFamily: "Arial, sans-serif" };
+
+        const Cross = ({ x, y, r = 5 }) => (
+          <g {...line}>
+            <line x1={x - r} y1={y} x2={x + r} y2={y} />
+            <line x1={x} y1={y - r} x2={x} y2={y + r} />
+          </g>
+        );
+        const hTicks = Array.from({ length: 26 }, (_, i) => i * 10); // 0 to 250 mm
+        const vTicks = Array.from({ length: 19 }, (_, i) => i * 10); // 0 to 180 mm
+
+        return (
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            width={`${W}mm`}
+            height={`${H}mm`}
+            style={{ position: "absolute", left: 0, top: 0 }}
+          >
+            {/* Corner crosshairs: centres 10 mm from each paper edge */}
+            <Cross x={10} y={10} />
+            <Cross x={W - 10} y={10} />
+            <Cross x={10} y={H - 10} />
+            <Cross x={W - 10} y={H - 10} />
+            <Cross x={W / 2} y={H / 2} />
+
+            {/* Edge marks: start exactly at the paper edge, show printer clipping */}
+            <g {...line}>
+              <line x1={0} y1={H / 2} x2={10} y2={H / 2} />
+              <line x1={W - 10} y1={H / 2} x2={W} y2={H / 2} />
+              <line x1={W / 2} y1={0} x2={W / 2} y2={10} />
+              <line x1={W / 2} y1={H - 10} x2={W / 2} y2={H} />
+            </g>
+
+            {/* Rulers: origin at 20,20 mm. 250 mm across, 180 mm down */}
+            <g {...line}>
+              <line x1={20} y1={20} x2={270} y2={20} />
+              <line x1={20} y1={20} x2={20} y2={200} />
+              {hTicks.map((t) => (
+                <line
+                  key={`h${t}`}
+                  x1={20 + t}
+                  y1={20}
+                  x2={20 + t}
+                  y2={20 + (t % 50 === 0 ? 5 : 3)}
+                />
+              ))}
+              {vTicks.map((t) => (
+                <line
+                  key={`v${t}`}
+                  x1={20}
+                  y1={20 + t}
+                  x2={20 + (t % 50 === 0 ? 5 : 3)}
+                  y2={20 + t}
+                />
+              ))}
+            </g>
+            {[50, 100, 150, 200, 250].map((t) => (
+              <text
+                key={`ht${t}`}
+                x={20 + t}
+                y={30}
+                fontSize="3"
+                textAnchor="middle"
+                {...label}
+              >
+                {t}
+              </text>
+            ))}
+            {[50, 100, 150].map((t) => (
+              <text
+                key={`vt${t}`}
+                x={27}
+                y={20 + t + 1}
+                fontSize="3"
+                {...label}
+              >
+                {t}
+              </text>
+            ))}
+
+            {/* Cheque area (203 x 89, flush right, centred): corner marks + centre */}
+            <g {...line}>
+              <polyline
+                points={`${ox},${oy + 8} ${ox},${oy} ${ox + 8},${oy}`}
+              />
+              <polyline
+                points={`${ox},${oy + CH - 8} ${ox},${oy + CH} ${ox + 8},${oy + CH}`}
+              />
+              {/* Right corners: horizontal ticks only (a vertical line on the paper edge would clip) */}
+              <line x1={W - 8} y1={oy} x2={W} y2={oy} />
+              <line x1={W - 8} y1={oy + CH} x2={W} y2={oy + CH} />
+            </g>
+            <Cross x={ox + CW / 2} y={H / 2} />
+            <text x={ox + 12} y={oy + 14} fontSize="3" {...label}>
+              {`Cheque area ${CW} x ${CH} mm (left edge ${ox} mm, top ${oy} mm)`}
+            </text>
+
+            {/* Line thickness strip */}
+            {[0.1, 0.2, 0.3, 0.5].map((t, i) => (
+              <g key={`t${t}`}>
+                <line
+                  x1={40}
+                  y1={150 + i * 6}
+                  x2={80}
+                  y2={150 + i * 6}
+                  stroke="#000"
+                  strokeWidth={t}
+                />
+                <text x={83} y={151 + i * 6} fontSize="3" {...label}>
+                  {t} mm
+                </text>
+              </g>
+            ))}
+
+            {/* Titles and orientation */}
+            <text x={40} y={45} fontSize="4" fontWeight="bold" {...label}>
+              PRINT CALIBRATION - A4 landscape, 100%
+            </text>
+            <text x={40} y={51} fontSize="3" {...label}>
+              Crosshair centres: 277 x 190 mm apart, 10 mm from each paper edge
+            </text>
+            <text
+              x={W / 2}
+              y={17}
+              fontSize="4"
+              fontWeight="bold"
+              textAnchor="middle"
+              {...label}
+            >
+              TOP
+            </text>
+            <text
+              x={W - 14}
+              y={40}
+              fontSize="4"
+              fontWeight="bold"
+              textAnchor="end"
+              {...label}
+            >
+              RIGHT
+            </text>
+          </svg>
+        );
+      }
+
+      // One place that draws every cheque field. Preview and print both use it, so they can't drift.
+      // mode "preview": editable, off-fields shown as ghosts. mode "print": black ink, only fields that are on.
+      function ChequeArtwork({
+        mode,
+        fields,
+        fieldsOn,
+        amountText,
+        dateChars,
+        payeeLayout,
+        wordsLayout,
+        usePayeeSvg,
+        useWordsSvg,
+        focusKey,
+        onFocusField,
+        onAcPayeeClick,
+      }) {
+        const preview = mode === "preview";
+        const ink = preview ? "#0f172a" : "#000000";
+        const acOn = !!fieldsOn.acPayee;
+        const ac = fields.acPayee || {};
+        const ghost = (on) => (preview && !on ? { opacity: 0.25 } : undefined);
+        const acLine = {
+          width: "100%",
+          height: 0,
+          borderTop: acOn ? `0.3mm solid ${ink}` : "0.3mm dashed #64748b",
+        };
+
+        return (
+          <>
+            {/* A/C Payee crossing */}
+            {(preview || acOn) && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: `${ac.top ?? 5.0}mm`,
+                  left: `${ac.left ?? 6.0}mm`,
+                  width: `${ac.width ?? 50.0}mm`,
+                  height: "10mm",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  fontFamily: ac.fontFamily || "Arial",
+                  transform: `rotate(${ac.angle ?? -15}deg)`,
+                  transformOrigin: "center center",
+                  userSelect: preview ? "none" : undefined,
+                }}
+                className={
+                  preview
+                    ? `cursor-pointer rounded transition-all duration-200 ${
+                        acOn ? "" : "opacity-40 hover:opacity-80"
+                      } ${
+                        focusKey === "acPayee" && acOn
+                          ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30"
+                          : acOn
+                            ? "hover:bg-slate-400/20"
+                            : ""
+                      }`
+                    : undefined
+                }
+                title={
+                  preview && !acOn
+                    ? "Click to add the A/C Payee crossing"
+                    : undefined
+                }
+                onClick={preview ? onAcPayeeClick : undefined}
+              >
+                <div style={acLine}></div>
+                <span
+                  style={{
+                    fontSize: `${ac.fontSize || 3.2}mm`,
+                    letterSpacing: `${ac.letterSpacing ?? 0.4}mm`,
+                    fontWeight: `${ac.fontWeight || "normal"}`,
+                    ...(preview
+                      ? {}
+                      : {
+                          color: ink,
+                          textTransform: "uppercase",
+                          margin: "0.5mm 0",
+                        }),
+                  }}
+                  className={
+                    preview
+                      ? `uppercase tracking-widest my-0.5 ${
+                          acOn ? "text-zinc-900" : "text-zinc-500"
+                        }`
+                      : undefined
+                  }
+                >
+                  {preview && !acOn ? "+ A/C Payee" : "A/C Payee"}
+                </span>
+                <div style={acLine}></div>
+              </div>
+            )}
+
+            {/* Payee name */}
+            {usePayeeSvg && (preview || fieldsOn.payee) && (
+              <div style={ghost(fieldsOn.payee)}>
+                <BaselineLinesText
+                  layout={payeeLayout}
+                  cfg={fields.payee}
+                  cheque={fields.cheque}
+                  color={ink}
+                  preview={preview}
+                  active={preview && focusKey === "payee"}
+                  onClick={() => onFocusField("payee")}
+                />
+              </div>
+            )}
+
+            {/* Amount in words */}
+            {useWordsSvg && (preview || fieldsOn.amountWords) && (
+              <div style={ghost(fieldsOn.amountWords)}>
+                <BaselineLinesText
+                  layout={wordsLayout}
+                  cfg={fields.amountWords}
+                  cheque={fields.cheque}
+                  color={ink}
+                  preview={preview}
+                  active={preview && focusKey === "amountWords"}
+                  onClick={() => onFocusField("amountWords")}
+                />
+              </div>
+            )}
+
+            {/* Numeric amount */}
+            {fields.cheque && (preview || fieldsOn.amountNumeric) && (
+              <div style={ghost(fieldsOn.amountNumeric)}>
+                <BoxCenteredText
+                  text={amountText}
+                  cfg={fields.amountNumeric}
+                  cheque={fields.cheque}
+                  color={ink}
+                  preview={preview}
+                  active={preview && focusKey === "amountNumeric"}
+                  onClick={() => onFocusField("amountNumeric")}
+                />
+              </div>
+            )}
+
+            {/* Date, one digit per cell */}
+            {fields.cheque && (preview || fieldsOn.date) && (
+              <div style={ghost(fieldsOn.date)}>
+                <BoxCenteredCells
+                  chars={dateChars}
+                  cfg={fields.date}
+                  cheque={fields.cheque}
+                  color={ink}
+                  preview={preview}
+                  active={preview && focusKey === "date"}
+                  onClick={() => onFocusField("date")}
+                />
+              </div>
+            )}
+          </>
+        );
+      }
+
+      // Cheque-sized calibration marks, drawn in cheque coordinates like the real fields.
+      // Crosshairs sit 5 mm inside each cheque edge. Also outlines the date and amount boxes from the preset.
+      function ChequeCalibration({ fields }) {
+        const cw = fields.cheque?.width ?? PRINT_CANVAS.width;
+        const ch = fields.cheque?.height ?? PRINT_CANVAS.height;
+        const inset = 5;
+        const line = { stroke: "#000", strokeWidth: 0.2, fill: "none" };
+        const Cross = ({ x, y, r = 3 }) => (
+          <g {...line}>
+            <line x1={x - r} y1={y} x2={x + r} y2={y} />
+            <line x1={x} y1={y - r} x2={x} y2={y + r} />
+          </g>
+        );
+        const boxOf = (cfg) =>
+          cfg && cfg.boxWidth !== undefined
+            ? {
+                left: cw - Number(cfg.boxRight) - Number(cfg.boxWidth),
+                top: Number(cfg.boxTop),
+                w: Number(cfg.boxWidth),
+                h: Number(cfg.boxHeight),
+                cells: Number(cfg.cells) || 1,
+              }
+            : null;
+        const dateBox = boxOf(fields.date);
+        const amountBox = boxOf(fields.amountNumeric);
+
+        return (
+          <svg
+            viewBox={`0 0 ${cw} ${ch}`}
+            width={`${cw}mm`}
+            height={`${ch}mm`}
+            style={{
+              position: "absolute",
+              left: `${PRINT_CANVAS.width - cw}mm`,
+              top: `${(PRINT_CANVAS.height - ch) / 2}mm`,
+              overflow: "visible",
+            }}
+          >
+            <Cross x={inset} y={inset} />
+            <Cross x={cw - inset} y={inset} />
+            <Cross x={inset} y={ch - inset} />
+            <Cross x={cw - inset} y={ch - inset} />
+            <Cross x={cw / 2} y={ch / 2} />
+            {[dateBox, amountBox].map(
+              (b, i) =>
+                b && (
+                  <g key={i} {...line}>
+                    <rect x={b.left} y={b.top} width={b.w} height={b.h} />
+                    {Array.from({ length: b.cells - 1 }, (_, c) => (
+                      <line
+                        key={c}
+                        x1={b.left + ((c + 1) * b.w) / b.cells}
+                        x2={b.left + ((c + 1) * b.w) / b.cells}
+                        y1={b.top}
+                        y2={b.top + b.h}
+                        strokeWidth={0.1}
+                      />
+                    ))}
+                  </g>
+                ),
+            )}
+            <text
+              x={cw / 2}
+              y={ch / 2 + 6}
+              fontSize="2.5"
+              textAnchor="middle"
+              fill="#000"
+              fontFamily="Arial, sans-serif"
+            >
+              {`Marks 5 mm inside each edge (${cw} x ${ch} mm)`}
+            </text>
+          </svg>
+        );
+      }
+
       // Collapsible section, closed by default (used for the "Exact positions" settings)
       function Collapsible({ title, children, defaultOpen = false }) {
         const [open, setOpen] = React.useState(defaultOpen);
@@ -1561,6 +1950,24 @@
       const PRINTER_KEY = "cheque_printer_name"; // the chosen printer, remembered between runs
       const THEME_KEY = "cheque_theme"; // "light" or "dark", remembered between runs
 
+      const PRINTER_CAL_KEY = "cheque_printer_calibration"; // { "<printer name>": { x, y } } in mm
+      function loadPrinterCal(printer) {
+        try {
+          const all = JSON.parse(appStorage.getItem(PRINTER_CAL_KEY) || "{}");
+          const c = all[printer] || {};
+          return { x: Number(c.x) || 0, y: Number(c.y) || 0 };
+        } catch {
+          return { x: 0, y: 0 };
+        }
+      }
+      function savePrinterCal(printer, cal) {
+        try {
+          const all = JSON.parse(appStorage.getItem(PRINTER_CAL_KEY) || "{}");
+          all[printer] = { x: Number(cal.x) || 0, y: Number(cal.y) || 0 };
+          appStorage.setItem(PRINTER_CAL_KEY, JSON.stringify(all));
+        } catch {}
+      }
+
       // Counts the digits and decimal points before position `pos`. Commas don't count,
       // so they can appear and disappear while formatting without moving the caret.
       function countAmountChars(text, pos) {
@@ -1667,6 +2074,12 @@
         // Workspace Interactive Zoom State (Range: 0.8 to 2.0)
         const [zoomFactor, setZoomFactor] = useState(DEFAULT_ZOOM_FACTOR);
 
+        // Calibration sheet: when true, the print area shows the sheet instead of the cheque
+        const [calibrationMode, setCalibrationMode] = useState(false);
+
+        // Cheque Calibration Mode state
+        const [chequeCalMode, setChequeCalMode] = useState(false);
+
         // Interactive Viewport Pan/Drag States
         const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
         const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
@@ -1704,6 +2117,9 @@
 
         const [showPayeeManager, setShowPayeeManager] = useState(false);
         const [sortBy, setSortBy] = React.useState("alpha"); // "alphabetical" or "recent"; resets each time the modal opens
+
+        // Per-printer correction in mm (+x moves the print right, +y moves it down). Print only.
+        const [printerCal, setPrinterCal] = useState({ x: 0, y: 0 });
 
         // STATES END HERE --------------------------------------------------------------
 
@@ -1902,6 +2318,12 @@
 
         useEffect(() => setActiveSuggestion(-1), [payeeName, showSuggestions]);
 
+        useEffect(() => {
+          setPrinterCal(
+            selectedPrinter ? loadPrinterCal(selectedPrinter) : { x: 0, y: 0 },
+          );
+        }, [selectedPrinter]);
+
         // EFFECTS END HERE --------------------------------------------------------------
 
         // DOM Input Section Reference Anchors for Automated Scrolling
@@ -1977,6 +2399,12 @@
               "Incorrect password! Enter your password again or choose to proceed with a new password below.",
             );
           }
+        };
+
+        const updatePrinterCal = (axis, value) => {
+          const next = { ...printerCal, [axis]: parseFloat(value) || 0 };
+          setPrinterCal(next);
+          if (selectedPrinter) savePrinterCal(selectedPrinter, next);
         };
 
         // Graceful Alternative Reset & Quarantine Isolation Routine
@@ -2364,6 +2792,35 @@
             window.print();
           });
           return { success: true };
+        };
+
+        // Prints the calibration sheet through the same path as a real cheque
+        const handlePrintCalibration = async () => {
+          if (window.desktop?.printers && !selectedPrinter) {
+            await requestPrint();
+            showToast(
+              "Choose a printer, close the panel, then click again",
+              "info",
+            );
+            return;
+          }
+          setCalibrationMode(true);
+          await new Promise((r) => setTimeout(r, 150)); // let the sheet render first
+          const result = await printSheet();
+          setCalibrationMode(false);
+          if (result && result.success === false) {
+            showToast(result.reason || "Calibration print failed", "error");
+          }
+        };
+
+        const handlePrintChequeCal = async () => {
+          setChequeCalMode(true);
+          await new Promise((r) => setTimeout(r, 150));
+          const result = await printSheet();
+          setChequeCalMode(false);
+          if (result && result.success === false) {
+            showToast(result.reason || "Calibration print failed", "error");
+          }
         };
 
         // Function to execute print and log the event with a Print logic
@@ -2775,6 +3232,8 @@
               ? wordsLayout
               : null;
         const rawSplitDateArray = formatSplitDate(chequeDate);
+        const chequeW = fields.cheque?.width ?? PRINT_CANVAS.width;
+        const chequeH = fields.cheque?.height ?? PRINT_CANVAS.height;
 
         // ---- Basics: Text size and the main position settings (always visible) ----
         const boxH = Number(fields[boxFieldKey]?.boxHeight) || 1;
@@ -3363,6 +3822,38 @@
                         </p>
                       )}
                     </div>
+
+                    {selectedPrinter && (
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                          Printer offset (mm)
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <LabeledNumber
+                            tall={false}
+                            label="Right (+) / Left (−)"
+                            step={0.1}
+                            value={printerCal.x}
+                            onChange={(e) =>
+                              updatePrinterCal("x", e.target.value)
+                            }
+                          />
+                          <LabeledNumber
+                            tall={false}
+                            label="Down (+) / Up (−)"
+                            step={0.1}
+                            value={printerCal.y}
+                            onChange={(e) =>
+                              updatePrinterCal("y", e.target.value)
+                            }
+                          />
+                        </div>
+                        <p className="mt-1.5 text-[10px] text-slate-500">
+                          Saved for this printer. Applied when printing a
+                          cheque.
+                        </p>
+                      </div>
+                    )}
 
                     <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-[11px] font-mono text-slate-400 flex justify-between">
                       <span>Paper</span>
@@ -4209,6 +4700,28 @@
                             />
                           </div>
                         )}
+
+                        {lineFieldKey === "payee" && (
+                          <label className="col-span-2 flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="accent-amber-500"
+                              checked={fields.payee.singleLine === false}
+                              disabled={showVerifyToast}
+                              onChange={(e) =>
+                                setFields({
+                                  ...fields,
+                                  payee: {
+                                    ...fields.payee,
+                                    singleLine: !e.target.checked,
+                                  },
+                                })
+                              }
+                            />
+                            <span>Allow payee on 2 lines</span>
+                          </label>
+                        )}
+
                         {basicPos.map((p) => (
                           <LabeledNumber
                             key={p.key}
@@ -4369,6 +4882,26 @@
                                 className="w-3.5 h-3.5"
                               ></i>
                               <span>Reset Defaults</span>
+                            </button>
+                            <button
+                              onClick={handlePrintCalibration}
+                              className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs py-2.5 rounded-lg font-medium transition text-center cursor-pointer border border-slate-700/60 flex items-center justify-center gap-2"
+                            >
+                              <i
+                                data-lucide="printer"
+                                className="w-3.5 h-3.5"
+                              ></i>
+                              <span>Print calibration sheet</span>
+                            </button>
+                            <button
+                              onClick={handlePrintChequeCal}
+                              className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs py-2.5 rounded-lg font-medium transition text-center cursor-pointer border border-slate-700/60 flex items-center justify-center gap-2"
+                            >
+                              <i
+                                data-lucide="printer"
+                                className="w-3.5 h-3.5"
+                              ></i>
+                              <span>Print cheque calibration</span>
                             </button>
                           </div>
                         </div>
@@ -4581,12 +5114,14 @@
                             /* Chain the scale factor and drag translations together */
                             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomFactor})`,
                             transformOrigin: "center center",
+                            "--cheque-w": `${chequeW}mm`,
+                            "--cheque-h": `${chequeH}mm`,
                           }}
                         >
                           {/* The Live Interactive Cheque Container */}
                           <div
                             key={selectedBank}
-                            className="cheque-swap-in cheque-canvas-screen border border-transparent overflow-hidden select-none rounded-[3px] transition-all"
+                            className="cheque-swap-in cheque-canvas-screen overflow-hidden select-none rounded-[3px] transition-all"
                             style={{
                               position: "relative",
                               background:
@@ -4602,180 +5137,29 @@
                             <div
                               className="global-offset-wrapper"
                               style={{
-                                transform: `scale(calc(50vw / 297mm)) translate(${globalOffset.left + 10}mm, ${globalOffset.top + 6.2}mm)` /* Live global offset + preview-only margin (10mm left, 6.2mm top) for the enlarged preview cheque */,
+                                transform: `scale(calc(50vw / 297mm)) translate(${globalOffset.left - (PRINT_CANVAS.width - chequeW)}mm, ${globalOffset.top - (PRINT_CANVAS.height - chequeH) / 2}mm)`,
                               }}
                             >
-                              {/* Dynamic State-Linked Preview Element: A/C Payee Corner Crossing (100% Configurable) */}
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: `${fields.acPayee?.top ?? 5.0}mm`,
-                                  left: `${fields.acPayee?.left ?? 6.0}mm`,
-                                  width: `${fields.acPayee?.width ?? 50.0}mm`,
-                                  height: "10mm",
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  justifyContent: "center",
-                                  alignItems: "center",
-                                  fontFamily:
-                                    fields.acPayee?.fontFamily || "Arial",
-                                  transform: `rotate(${fields.acPayee?.angle ?? -15}deg)`,
-                                  transformOrigin: "center center",
-                                  userSelect: "none",
-                                }}
-                                className={`cursor-pointer rounded transition-all duration-200 ${
-                                  acPayeeOn ? "" : "opacity-40 hover:opacity-80"
-                                } ${
-                                  focusKey === "acPayee" && acPayeeOn
-                                    ? "ring-2 ring-amber-500 bg-amber-500/10 border-amber-500/30"
-                                    : acPayeeOn
-                                      ? "hover:bg-slate-400/20"
-                                      : ""
-                                }`}
-                                title={
-                                  acPayeeOn
-                                    ? undefined
-                                    : "Click to add the A/C Payee crossing"
-                                }
-                                onClick={() => {
+                              <ChequeArtwork
+                                mode="preview"
+                                fields={fields}
+                                fieldsOn={fieldsOn}
+                                amountText={formatChequeAmount(amount)}
+                                dateChars={rawSplitDateArray.map(
+                                  (c) => c || "•",
+                                )}
+                                payeeLayout={payeePreviewLayout}
+                                wordsLayout={wordsPreviewLayout}
+                                usePayeeSvg={usePayeeSvg}
+                                useWordsSvg={useWordsSvg}
+                                focusKey={focusKey}
+                                onFocusField={focusAndScrollToInput}
+                                onAcPayeeClick={() => {
                                   if (!acPayeeOn)
                                     setFieldEnabled("acPayee", true);
                                   focusAndScrollToInput("acPayee");
                                 }}
-                              >
-                                {/* Upper line: solid when on, dashed ghost when off */}
-                                <div
-                                  className="w-full"
-                                  style={{
-                                    height: 0,
-                                    borderTop: acPayeeOn
-                                      ? "0.3mm solid #0f172a"
-                                      : "0.3mm dashed #64748b",
-                                  }}
-                                ></div>
-
-                                <span
-                                  style={{
-                                    fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
-                                    letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm`,
-                                    fontWeight: `${fields.acPayee?.fontWeight || "normal"}`,
-                                  }}
-                                  className={`uppercase tracking-widest my-0.5 ${
-                                    acPayeeOn
-                                      ? "text-zinc-900"
-                                      : "text-zinc-500"
-                                  }`}
-                                >
-                                  {acPayeeOn ? "A/C Payee" : "+ A/C Payee"}
-                                </span>
-
-                                {/* Lower line */}
-                                <div
-                                  className="w-full"
-                                  style={{
-                                    height: 0,
-                                    borderTop: acPayeeOn
-                                      ? "0.3mm solid #0f172a"
-                                      : "0.3mm dashed #64748b",
-                                  }}
-                                ></div>
-                              </div>
-
-                              {/* Layer Element: Payee Name */}
-
-                              {usePayeeSvg && (
-                                <div
-                                  style={
-                                    fieldsOn.payee
-                                      ? undefined
-                                      : { opacity: 0.25 }
-                                  }
-                                >
-                                  <BaselineLinesText
-                                    layout={payeePreviewLayout}
-                                    cfg={fields.payee}
-                                    cheque={fields.cheque}
-                                    color="#0f172a"
-                                    preview
-                                    active={focusKey === "payee"}
-                                    onClick={() =>
-                                      focusAndScrollToInput("payee")
-                                    }
-                                  />
-                                </div>
-                              )}
-
-                              {/* Layer Element: Amount Words */}
-
-                              {useWordsSvg && (
-                                <div
-                                  style={
-                                    fieldsOn.amountWords
-                                      ? undefined
-                                      : { opacity: 0.25 }
-                                  }
-                                >
-                                  <BaselineLinesText
-                                    layout={wordsPreviewLayout}
-                                    cfg={fields.amountWords}
-                                    cheque={fields.cheque}
-                                    color="#0f172a"
-                                    preview
-                                    active={focusKey === "amountWords"}
-                                    onClick={() =>
-                                      focusAndScrollToInput("amountWords")
-                                    }
-                                  />
-                                </div>
-                              )}
-
-                              {/* Layer Element: Numeric Amount Value */}
-                              {fields.cheque && (
-                                <div
-                                  style={
-                                    fieldsOn.amountNumeric
-                                      ? undefined
-                                      : { opacity: 0.25 }
-                                  }
-                                >
-                                  <BoxCenteredText
-                                    text={formatChequeAmount(amount)}
-                                    cfg={fields.amountNumeric}
-                                    cheque={fields.cheque}
-                                    color="#0f172a"
-                                    preview
-                                    active={focusKey === "amountNumeric"}
-                                    onClick={() =>
-                                      focusAndScrollToInput("amountNumeric")
-                                    }
-                                  />
-                                </div>
-                              )}
-
-                              {/* Layer Element: Custom Split-box Date Characters Grid */}
-                              {fields.cheque && (
-                                <div
-                                  style={
-                                    fieldsOn.date
-                                      ? undefined
-                                      : { opacity: 0.25 }
-                                  }
-                                >
-                                  <BoxCenteredCells
-                                    chars={rawSplitDateArray.map(
-                                      (c) => c || "•",
-                                    )}
-                                    cfg={fields.date}
-                                    cheque={fields.cheque}
-                                    color="#0f172a"
-                                    preview
-                                    active={focusKey === "date"}
-                                    onClick={() =>
-                                      focusAndScrollToInput("date")
-                                    }
-                                  />
-                                </div>
-                              )}
+                              />
                             </div>
                           </div>
                         </div>
@@ -4788,104 +5172,35 @@
 
             {/* PURE INVISIBLE HARDWARE-PRINT MIRROR CONTAINER BLOCK */}
             <div className="print-only printer-viewport-a4">
-              <div className="cheque-canvas-print">
+              {calibrationMode && <CalibrationSheet />}
+              <div
+                className="cheque-canvas-print"
+                style={calibrationMode ? { display: "none" } : undefined}
+              >
                 <div
                   style={{
                     width: "100%",
                     height: "100%",
                     position: "relative",
-                    transform: `translate(${globalOffset.left}mm, ${globalOffset.top}mm)`,
+                    transform: `translate(${globalOffset.left + printerCal.x}mm, ${globalOffset.top + printerCal.y}mm)`,
                   }}
                 >
-                  {/* Dynamic Printing Element: A/C Payee Corner Crossing (100% Mirror Print Synced) */}
-                  {acPayeeOn && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: `${fields.acPayee?.top ?? 5.0}mm`,
-                        left: `${fields.acPayee?.left ?? 6.0}mm`,
-                        width: `${fields.acPayee?.width ?? 50.0}mm`,
-                        height: "10mm",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        fontFamily: fields.acPayee?.fontFamily || "Arial",
-                        transform: `rotate(${fields.acPayee?.angle ?? -15}deg)` /* Mirrors the exact real-time rotation angle */,
-                        transformOrigin: "center center",
-                      }}
-                    >
-                      {/* Upper Printing Line (True Solid Black) */}
-                      <div
-                        style={{
-                          width: "100%",
-                          height: 0,
-                          borderTop: "0.3mm solid #000000",
-                        }}
-                      ></div>
-
-                      {/* Secured Printing Text */}
-                      <span
-                        style={{
-                          fontSize: `${fields.acPayee?.fontSize || 3.2}mm`,
-                          letterSpacing: `${fields.acPayee?.letterSpacing ?? 0.4}mm` /* Mirrors the exact tracking pitch */,
-                          fontWeight: `${fields.acPayee?.fontWeight || "normal"}`,
-                          color: "#000000",
-                          textTransform: "uppercase",
-                          margin: "0.5mm 0",
-                        }}
-                      >
-                        A/C Payee
-                      </span>
-
-                      {/* Lower Printing Line (True Solid Black) */}
-                      <div
-                        style={{
-                          width: "100%",
-                          height: 0,
-                          borderTop: "0.3mm solid #000000",
-                        }}
-                      ></div>
-                    </div>
-                  )}
-
-                  {/* Payee Target Text */}
-                  {usePayeeSvg && fieldsOn.payee && (
-                    <BaselineLinesText
-                      layout={payeeLayout}
-                      cfg={fields.payee}
-                      cheque={fields.cheque}
-                      color="#000000"
-                    />
-                  )}
-
-                  {/* Tokenized Words */}
-                  {useWordsSvg && fieldsOn.amountWords && (
-                    <BaselineLinesText
-                      layout={wordsLayout}
-                      cfg={fields.amountWords}
-                      cheque={fields.cheque}
-                      color="#000000"
-                    />
-                  )}
-
-                  {/* Cross Secured Numeric Amount Layout Line */}
-                  {fields.cheque && fieldsOn.amountNumeric && (
-                    <BoxCenteredText
-                      text={formatChequeAmount(amount)}
-                      cfg={fields.amountNumeric}
-                      cheque={fields.cheque}
-                      color="#000000"
-                    />
-                  )}
-
-                  {/* Split Space Date Sequences */}
-                  {fields.cheque && fieldsOn.date && (
-                    <BoxCenteredCells
-                      chars={rawSplitDateArray}
-                      cfg={fields.date}
-                      cheque={fields.cheque}
-                      color="#000000"
+                  {chequeCalMode ? (
+                    <ChequeCalibration fields={fields} />
+                  ) : (
+                    <ChequeArtwork
+                      mode="print"
+                      fields={fields}
+                      fieldsOn={fieldsOn}
+                      amountText={formatChequeAmount(amount)}
+                      dateChars={rawSplitDateArray}
+                      payeeLayout={payeeLayout}
+                      wordsLayout={wordsLayout}
+                      usePayeeSvg={usePayeeSvg}
+                      useWordsSvg={useWordsSvg}
+                      focusKey={null}
+                      onFocusField={() => {}}
+                      onAcPayeeClick={() => {}}
                     />
                   )}
                 </div>
