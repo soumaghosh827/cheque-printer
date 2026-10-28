@@ -301,6 +301,97 @@
       const savePresetList = (bank, list) =>
         appStorage.setItem(presetListKey(bank), JSON.stringify(list));
 
+      // Presets shipped with the app. They live in code, so an app update changes them for everyone.
+      // Keep every id unique and never change an id once released (the active-preset choice is stored by id).
+      const BUILTIN_PRESETS = {
+        sbi: [],
+        axis: [
+          {
+            id: "builtin_axis_burgundy",
+            name: "Axis Burgundy Private",
+            fields: {
+              acPayee: {
+                top: 1.1,
+                left: -12.5,
+                width: 40,
+                fontSize: 2,
+                fontFamily: "Arial",
+                fontWeight: "bold",
+                letterSpacing: 0.4,
+                angle: -45,
+              },
+              payee: {
+                lineTop: 25.8,
+                lineThickness: 0.5,
+                textLeft: 20,
+                line2Left: 15,
+                textRight: 65,
+                textRight2: 65,
+                textHeight: 2.2,
+                gapAbove: 1.5,
+                gapBelow: 1.5,
+                nudgeX: 0,
+                nudgeY: 0,
+                fontFamily: "Microsoft Himalaya",
+                fontWeight: "normal",
+              },
+              amountWords: {
+                lineTop: 34.05,
+                line2Top: 42.3,
+                lineThickness: 0.5,
+                textLeft: 30,
+                line2Left: 15,
+                textRight: 30,
+                textRight2: 85,
+                textHeight: 2.2,
+                gapAbove: 1.5,
+                gapBelow: 1,
+                nudgeX: 0,
+                nudgeY: 0,
+                fontFamily: "Microsoft Himalaya",
+                fontWeight: "normal",
+              },
+              amountNumeric: {
+                boxRight: 10.9,
+                boxTop: 33.4,
+                boxWidth: 38.5,
+                boxHeight: 8.3,
+                heightRatio: 0.28,
+                nudgeX: 0,
+                nudgeY: 0,
+                fontFamily: "Microsoft Himalaya",
+                fontWeight: "normal",
+              },
+              date: {
+                boxRight: 8.6,
+                boxTop: 6.5,
+                boxWidth: 45,
+                boxHeight: 6,
+                cells: 8,
+                heightRatio: 0.33,
+                nudgeX: 0,
+                nudgeY: 0,
+                fontFamily: "Microsoft Himalaya",
+                fontWeight: "normal",
+                letterSpacing: 3.3,
+              },
+              all: { fontFamily: "Arial" },
+              cheque: { width: 203.2, height: 93 },
+            },
+          },
+        ],
+        hdfc: [],
+        icici: [],
+        indusind: [],
+      };
+      const getBuiltins = (bank) =>
+        (BUILTIN_PRESETS[bank] || []).map((p) => ({ ...p, builtin: true }));
+      // Built-ins first, then the user's own saved presets
+      const loadAllPresets = (bank) => [
+        ...getBuiltins(bank),
+        ...loadPresets(bank),
+      ];
+
       // Master Application Configs
       const DEFAULT_ZOOM_FACTOR = 1.4;
       const PRINT_CANVAS = { width: 203, height: 89 }; // must match .cheque-canvas-print in the print CSS
@@ -465,7 +556,7 @@
             },
             amountNumeric: {
               boxRight: 10,
-              boxTop: 32.5,
+              boxTop: 31.5,
               boxWidth: 38,
               boxHeight: 8.5,
               heightRatio: 0.28,
@@ -476,7 +567,7 @@
             },
             date: {
               boxRight: 10.5,
-              boxTop: 5,
+              boxTop: 4,
               boxWidth: 40,
               boxHeight: 5,
               cells: 8,
@@ -2671,7 +2762,7 @@
 
         const handleBankChange = (bankKey) => {
           setSelectedBank(bankKey);
-          const list = loadPresets(bankKey);
+          const list = loadAllPresets(bankKey);
           setPresets(list);
           applyPreset(
             appStorage.getItem(activePresetKey(bankKey)),
@@ -2698,7 +2789,10 @@
 
         // Save layout specifications locally
         const persistPresets = (list) => {
-          savePresetList(selectedBank, list);
+          savePresetList(
+            selectedBank,
+            list.filter((p) => !p.builtin),
+          );
           setPresets(list);
         };
 
@@ -2725,6 +2819,13 @@
             );
             return;
           }
+          if (presets.find((p) => p.id === activePresetId)?.builtin) {
+            showToast(
+              "Built-in presets can't be overwritten. Use Save as new.",
+              "warning",
+            );
+            return;
+          }
           const list = presets.map((p) =>
             p.id === activePresetId
               ? { ...p, fields: JSON.parse(JSON.stringify(fields)) }
@@ -2739,13 +2840,20 @@
           const clean = (name || "").trim();
           if (!clean) return;
           persistPresets(
-            presets.map((p) => (p.id === id ? { ...p, name: clean } : p)),
+            presets.map((p) =>
+              p.id === id && !p.builtin ? { ...p, name: clean } : p,
+            ),
           );
         };
 
         const deletePreset = (id) => {
           const target = presets.find((p) => p.id === id);
-          if (!target || !confirm(`Delete preset "${target.name}"?`)) return;
+          if (
+            !target ||
+            target.builtin ||
+            !confirm(`Delete preset "${target.name}"?`)
+          )
+            return;
           const list = presets.filter((p) => p.id !== id);
           persistPresets(list);
           if (id === activePresetId) applyPreset(null, selectedBank, list);
@@ -3051,7 +3159,14 @@
                 if (isV2) {
                   incoming = (
                     Array.isArray(source[bankKey]) ? source[bankKey] : []
-                  ).filter((p) => p && p.id && p.name && p.fields);
+                  ).filter(
+                    (p) =>
+                      p &&
+                      p.id &&
+                      p.name &&
+                      p.fields &&
+                      !String(p.id).startsWith("builtin_"),
+                  );
                 } else if (
                   source[bankKey] &&
                   typeof source[bankKey] === "object"
@@ -3337,6 +3452,34 @@
                       ...p,
                       top: parseFloat(e.target.value) || 0,
                     })),
+                },
+                {
+                  key: "cw",
+                  label: "Cheque width (mm)",
+                  step: "0.1",
+                  value: fields.cheque?.width ?? 0,
+                  onChange: (e) => {
+                    const v = parseFloat(e.target.value);
+                    if (v > 0)
+                      setFields({
+                        ...fields,
+                        cheque: { ...fields.cheque, width: v },
+                      });
+                  },
+                },
+                {
+                  key: "ch",
+                  label: "Cheque height (mm)",
+                  step: "0.1",
+                  value: fields.cheque?.height ?? 0,
+                  onChange: (e) => {
+                    const v = parseFloat(e.target.value);
+                    if (v > 0)
+                      setFields({
+                        ...fields,
+                        cheque: { ...fields.cheque, height: v },
+                      });
+                  },
                 },
               ]
             : lineFieldKey === "payee"
@@ -3700,6 +3843,7 @@
                     >
                       <input
                         defaultValue={p.name}
+                        readOnly={p.builtin}
                         onBlur={(e) => {
                           if (
                             e.target.value.trim() &&
@@ -3718,14 +3862,20 @@
                       >
                         {p.id === activeId ? "Applied" : "Apply"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(p.id)}
-                        className="px-1.5 text-slate-500 hover:text-red-400 cursor-pointer"
-                        aria-label="Delete preset"
-                      >
-                        ✕
-                      </button>
+                      {p.builtin ? (
+                        <span className="px-1.5 text-[10px] text-slate-500">
+                          Built-in
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onDelete(p.id)}
+                          className="px-1.5 text-slate-500 hover:text-red-400 cursor-pointer"
+                          aria-label="Delete preset"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -4135,7 +4285,7 @@
                           <option value="default">Factory default</option>
                           {presets.map((p) => (
                             <option key={p.id} value={p.id}>
-                              {p.name}
+                              {p.builtin ? `${p.name} (built-in)` : p.name}
                             </option>
                           ))}
                         </select>
@@ -4147,6 +4297,7 @@
                             disabled={
                               showVerifyToast ||
                               !activePresetId ||
+                              activePreset?.builtin ||
                               !presetEdited
                             }
                             className="bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded-lg font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
