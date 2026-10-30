@@ -11,6 +11,7 @@ const os = require("os");
 const path = require("path");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
+const log = require("electron-log");
 
 // One data folder, whether running from source or installed (so no data seems to vanish)
 app.setPath(
@@ -29,7 +30,7 @@ app.on("second-instance", () => {
   }
 });
 
-// ---- Storage: one JSON file in %APPDATA%\cheque-printer\ ----
+// ---- Storage: one JSON file in %APPDATA%\mal-cheque-printer\ ----
 const dataFile = path.join(app.getPath("userData"), "data.json");
 let store = {};
 let writeTimer = null;
@@ -38,10 +39,21 @@ function loadStore() {
   let raw;
   try {
     raw = fs.readFileSync(dataFile, "utf8");
-  } catch {
-    store = {}; // first run: no file yet
+  } catch (e) {
+    if (e.code === "ENOENT") {
+      store = {}; // genuine first run
+      return;
+    }
+    // Any other error: don't risk overwriting real data
+    log.error("Could not read data file:", e.message);
+    dialog.showErrorBox(
+      "Data file unreadable",
+      "Close other copies of the app and restart it.",
+    );
+    app.exit(1);
     return;
   }
+
   try {
     store = JSON.parse(raw);
   } catch {
@@ -183,20 +195,36 @@ function createWindow() {
 
 // ---- Updates: checked against the releases repo named in package.json ----
 function startUpdateChecks() {
-  autoUpdater.logger = console;
-  autoUpdater.autoDownload = true; // fetched quietly in the background
-  autoUpdater.autoInstallOnAppQuit = true; // "Later" means: installed when the app is closed
+  autoUpdater.logger = log;
+  log.transports.file.level = "info";
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("error", (err) =>
-    console.error("Update check failed:", err?.message || err),
+    log.error("Update check failed:", err?.message || err),
   );
+
+  // Log progress every 25% so the file stays readable
+  let lastLogged = -1;
+  autoUpdater.on("download-progress", (p) => {
+    const step = Math.floor(p.percent / 25) * 25;
+    if (step !== lastLogged) {
+      lastLogged = step;
+      log.info(
+        `Downloaded ${Math.round(p.percent)}% (${p.transferred}/${p.total} bytes)`,
+      );
+    }
+  });
+
+  // Make sure data is saved before the installer takes over
+  autoUpdater.on("before-quit-for-update", flushStore);
 
   let asked = false;
   autoUpdater.on("update-downloaded", async (info) => {
     if (asked) return; // one question per session
     asked = true;
-    const win = BrowserWindow.getAllWindows()[0];
-    const { response } = await dialog.showMessageBox(win, {
+    // No parent window: the dialog isn't modal to a window that is about to close
+    const { response } = await dialog.showMessageBox({
       type: "info",
       buttons: ["Restart now", "Later"],
       defaultId: 1, // Enter picks "Later", so an update never interrupts a print by accident
@@ -206,12 +234,15 @@ function startUpdateChecks() {
       detail:
         "Your data is kept. Choose Later to install it the next time you close the app.",
     });
-    if (response === 0) autoUpdater.quitAndInstall(true, true);
+    if (response === 0) autoUpdater.quitAndInstall(false, true); // visible installer, relaunch after
   });
 
-  const check = () => autoUpdater.checkForUpdates().catch(() => {}); // offline is fine
-  setTimeout(check, 10 * 1000); // shortly after start
-  setInterval(check, 60 * 60 * 1000); // then every hour
+  const check = () =>
+    autoUpdater
+      .checkForUpdates()
+      .catch((e) => log.warn("Check failed:", e?.message || e));
+  setTimeout(check, 60 * 1000); // give the app a minute to settle before the heavy work
+  setInterval(check, 60 * 60 * 1000);
 }
 
 app.whenReady().then(() => {
