@@ -91,7 +91,13 @@ ipcMain.on("storage:remove", (_e, key) => {
   delete store[key];
   scheduleFlush();
 });
-app.on("before-quit", flushStore);
+// app.on("before-quit", flushStore);
+app.on("before-quit", () => {
+  log.info("before-quit");
+  flushStore();
+});
+app.on("will-quit", () => log.info("will-quit"));
+app.on("quit", () => log.info("quit"));
 
 // ---- Printing ----
 const PRINT_OPTIONS = {
@@ -231,10 +237,15 @@ function startUpdateChecks() {
       cancelId: 1,
       title: "Update ready",
       message: `MAL Cheque Printer ${info.version} is ready to install.`,
-      detail:
-        "Your data is kept. Choose Later to install it the next time you close the app.",
+      detail: "Choose Later to install it the next time you close the app.",
     });
-    if (response === 0) autoUpdater.quitAndInstall(false, true); // visible installer, relaunch after
+    // if (response === 0) autoUpdater.quitAndInstall(false, true); // visible installer, relaunch after
+    if (response === 0) {
+      log.info("Restart now clicked");
+      flushStore();
+      BrowserWindow.getAllWindows().forEach((w) => w.hide());
+      autoUpdater.quitAndInstall(false, true);
+    }
   });
 
   const check = () =>

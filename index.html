@@ -887,6 +887,11 @@
         acPayee: false,
       };
 
+      // Desktop prints are reported by Electron, so the "did it print correctly?" modal is off.
+      // Set to true to show the verification modal after desktop prints again.
+      // The browser always shows the modal.
+      const DESKTOP_PRINT_CONFIRMATION = false;
+
       // Utility: Indian Numbering System Converter (Scales to Crores)
       function convertAmountToIndianWords(amount) {
         if (!amount || isNaN(amount)) return "";
@@ -3042,6 +3047,11 @@
               }
               return;
             }
+            // Desktop reports the print result itself, so log straight away unless the modal is switched on
+            if (window.desktop?.print && !DESKTOP_PRINT_CONFIRMATION) {
+              commitPrintLog(prospectiveLog);
+              return;
+            }
             setPendingLogEntry(prospectiveLog);
             setShowVerifyToast(true);
           } finally {
@@ -3104,11 +3114,11 @@
           return () => window.removeEventListener("keydown", onKeyDown);
         }, [isDashboardLocked, showVerifyToast, showPrintPanel]);
 
-        // Executes if the user confirms the physical cheque leaf printed cleanly
-        const confirmPrintSuccess = () => {
-          if (!pendingLogEntry || !encryptionKey) return;
+        // Logs a printed cheque: history, encryption, payee memory, field reset
+        const commitPrintLog = (entry) => {
+          if (!entry || !encryptionKey) return;
 
-          const finalUpdatedHistory = [pendingLogEntry, ...printHistory];
+          const finalUpdatedHistory = [entry, ...printHistory];
           setPrintHistory(finalUpdatedHistory);
 
           // Encrypt the entire collection payload package on the fly
@@ -3121,10 +3131,12 @@
           // Clear out UI notification alert anchors
           setShowVerifyToast(false);
           setPendingLogEntry(null);
-          if (fieldsOn.payee)
-            rememberPayee(pendingLogEntry["Payee Legal Name"]); // the name that was printed, not what is typed now
+          if (fieldsOn.payee) rememberPayee(entry["Payee Legal Name"]); // the name that was printed, not what is typed now
           resetFieldsOn(); // reset to default after a confirmed print
         };
+
+        // Executes if the user confirms the physical cheque leaf printed cleanly
+        const confirmPrintSuccess = () => commitPrintLog(pendingLogEntry);
 
         // Executes if the hardware jammed or failed
         const discardFailedPrint = () => {

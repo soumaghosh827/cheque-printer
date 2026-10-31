@@ -1,6 +1,6 @@
 {
   "name": "mal-cheque-printer",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Internal Cheque Printing Suite",
   "main": "electron/main.js",
   "scripts": {
