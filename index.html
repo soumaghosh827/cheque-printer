@@ -271,7 +271,7 @@
 
       const { useState, useEffect } = React;
 
-      const BANK_KEYS = ["sbi", "axis", "hdfc", "icici", "indusind"];
+      const BANK_KEYS = ["sbi", "axis", "hdfc", "icici", "indusind", "boi"];
 
       // Multi-preset storage: one list per bank, plus the last-applied preset id
       const presetListKey = (bank) => `cheque_presets_v2_${bank}`;
@@ -456,6 +456,7 @@
         hdfc: [],
         icici: [],
         indusind: [],
+        boi: [],
       };
       const getBuiltins = (bank) =>
         (BUILTIN_PRESETS[bank] || []).map((p) => ({ ...p, builtin: true }));
@@ -874,6 +875,79 @@
             },
             all: { fontFamily: "Arial" },
             cheque: { width: 203.5, height: 94 },
+          },
+        },
+        boi: {
+          id: "boi",
+          name: "Bank of India (Standard CTS-2010)",
+          defaultLabel: "Jawaharlal Nehru Road (default)",
+          fields: {
+            acPayee: {
+              top: 1.2,
+              left: -11,
+              width: 40.0,
+              fontSize: 2,
+              fontFamily: "Arial",
+              fontWeight: "bold",
+              letterSpacing: 0.4,
+              angle: -45,
+            },
+            payee: {
+              lineTop: 24,
+              lineThickness: 0.6,
+              textLeft: 19,
+              textRight: 55,
+              textRight2: 55,
+              line2Left: 19,
+              textHeight: 2.2,
+              gapAbove: 1,
+              gapBelow: 1,
+              nudgeX: 0,
+              nudgeY: 0,
+              fontFamily: "Microsoft Himalaya",
+              fontWeight: "normal",
+            },
+            amountWords: {
+              lineTop: 32.5,
+              line2Top: 41,
+              lineThickness: 0.6,
+              textLeft: 33,
+              line2Left: 15,
+              textRight: 25,
+              textRight2: 80,
+              textHeight: 2.2,
+              gapAbove: 1,
+              gapBelow: 1,
+              nudgeX: 0,
+              nudgeY: 0,
+              fontFamily: "Microsoft Himalaya",
+              fontWeight: "normal",
+            },
+            amountNumeric: {
+              boxRight: 7.3,
+              boxTop: 32.6,
+              boxWidth: 40,
+              boxHeight: 8.5,
+              heightRatio: 0.28,
+              nudgeX: 0,
+              nudgeY: -0.5,
+              fontFamily: "Microsoft Himalaya",
+              fontWeight: "normal",
+            },
+            date: {
+              boxRight: 8.6,
+              boxTop: 6.6,
+              boxWidth: 40,
+              boxHeight: 4.8,
+              cells: 8,
+              heightRatio: 0.33,
+              nudgeX: 0,
+              nudgeY: -0.5,
+              fontFamily: "Microsoft Himalaya",
+              fontWeight: "normal",
+            },
+            all: { fontFamily: "Arial" },
+            cheque: { width: 203.3, height: 93.3 },
           },
         },
       };
@@ -2292,6 +2366,7 @@
 
         const [showPayeeManager, setShowPayeeManager] = useState(false);
         const [sortBy, setSortBy] = React.useState("alpha"); // "alphabetical" or "recent"; resets each time the modal opens
+        const [showLogViewer, setShowLogViewer] = useState(false);
 
         // Per-printer correction in mm (+x moves the print right, +y moves it down). Print only.
         const [printerCal, setPrinterCal] = useState({ x: 0, y: 0 });
@@ -3033,6 +3108,11 @@
                 : 0,
             "Cheque Date": fieldsOn.date ? chequeDate : "—",
             Timestamp: localizedTimeString,
+            "Preset Used":
+              (activePreset
+                ? activePreset.name
+                : DEFAULT_PRESETS[selectedBank].defaultLabel || "Default") +
+              (presetEdited ? " (modified)" : ""),
           };
 
           // 3. Print, then hold the record until the user confirms the cheque came out right
@@ -3162,13 +3242,45 @@
 
           // Format column widths dynamically so strings fit comfortably inside cells
           const maxProps = [
-            { wch: 24 }, // Timestamp
-            { wch: 20 }, // Bank Template Used
+            { wch: 20 }, // Bank Template
             { wch: 35 }, // Payee Legal Name
             { wch: 22 }, // Transaction Amount
-            { wch: 22 }, // Date
+            { wch: 22 }, // Cheque Date
+            { wch: 24 }, // Timestamp
+            { wch: 34 }, // Preset Used
           ];
           worksheet["!cols"] = maxProps;
+
+          // Format the amount column to 2 decimals. Cosmetic only: a failure here
+          // must never block the download, but it is reported, not swallowed.
+          try {
+            if (worksheet && worksheet["!ref"]) {
+              const range = XLSX.utils.decode_range(worksheet["!ref"]);
+              let amountCol = -1;
+              for (let c = range.s.c; c <= range.e.c; c++) {
+                const head =
+                  worksheet[XLSX.utils.encode_cell({ r: range.s.r, c })];
+                if (head?.v === "Transaction Amount (₹)") {
+                  amountCol = c;
+                  break;
+                }
+              }
+              if (amountCol === -1) {
+                throw new Error("Amount column not found");
+              }
+              for (let r = range.s.r + 1; r <= range.e.r; r++) {
+                const cell =
+                  worksheet[XLSX.utils.encode_cell({ r, c: amountCol })];
+                if (cell && typeof cell.v === "number") cell.z = "#,##0.00";
+              }
+            }
+          } catch (err) {
+            console.error("Amount formatting skipped:", err);
+            showToast(
+              "Logs exported, but amount formatting could not be applied.",
+              "warning",
+            );
+          }
 
           // Generate localized date string for filename resolution
           const fileDate = new Date().toISOString().split("T")[0];
@@ -3684,6 +3796,102 @@
           setAmount(hasDot ? `${intPart}.${decPart}` : intPart);
         };
 
+        function LogViewerModal({ logs, onClose }) {
+          React.useEffect(() => {
+            const onKey = (e) => e.key === "Escape" && onClose();
+            window.addEventListener("keydown", onKey);
+            return () => window.removeEventListener("keydown", onKey);
+          }, [onClose]);
+
+          const cols = [
+            ["Timestamp", "Timestamp"],
+            ["Bank Template", "Bank"],
+            ["Payee Legal Name", "Payee"],
+            ["Transaction Amount (₹)", "Amount (₹)"],
+            ["Cheque Date", "Cheque Date"],
+            ["Preset Used", "Preset"],
+          ];
+
+          // Safe cell text: 2-decimal amount, "—" for missing values, never throws
+          const cellText = (key, value) => {
+            if (value === undefined || value === null || value === "")
+              return "—";
+            if (key === "Transaction Amount (₹)") {
+              const n = Number(value);
+              return Number.isFinite(n)
+                ? n.toLocaleString("en-IN", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : String(value);
+            }
+            return String(value);
+          };
+
+          return (
+            <div
+              className="fixed inset-0 z-[96] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm no-print animate-fade-in"
+              onClick={onClose}
+            >
+              <div
+                className="w-[60rem] max-w-[94vw] max-h-[85vh] flex flex-col bg-slate-950 border border-slate-700 rounded-2xl p-5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] space-y-3"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-slate-100">
+                    Print Logs ({logs.length})
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="text-slate-400 hover:text-white text-lg leading-none cursor-pointer"
+                    title="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {logs.length === 0 ? (
+                  <div className="text-sm text-slate-500 py-10 text-center">
+                    No logs yet
+                  </div>
+                ) : (
+                  <div className="overflow-auto custom-sidebar-scroll rounded-lg border border-slate-800">
+                    <table className="w-full text-xs text-left text-slate-300">
+                      <thead className="sticky top-0 bg-slate-900 text-slate-400 uppercase tracking-wider">
+                        <tr>
+                          {cols.map(([, label]) => (
+                            <th
+                              key={label}
+                              className="px-3 py-2 whitespace-nowrap"
+                            >
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {logs.map((row, i) => (
+                          <tr key={i} className="hover:bg-slate-900/60">
+                            {cols.map(([key, label]) => (
+                              <td
+                                key={label}
+                                className="px-3 py-2 whitespace-nowrap"
+                              >
+                                {cellText(key, row?.[key])}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
         // Modal to search, add and delete saved payee names. Changes apply instantly.
         function PayeeManagerModal({
           names,
@@ -3903,7 +4111,7 @@
                   </button>
                 </div>
 
-                <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+                <div className="space-y-1.5 max-h-[50vh] overflow-y-auto custom-sidebar-scroll">
                   <div className="flex items-center gap-2 p-2 rounded-lg border border-slate-800 bg-slate-900">
                     <span className="flex-1 text-sm text-slate-400">
                       {DEFAULT_PRESETS[selectedBank].defaultLabel ||
@@ -3994,6 +4202,12 @@
                   onRename={renamePreset}
                   onDelete={deletePreset}
                   onClose={() => setShowPresetManager(false)}
+                />
+              )}
+              {showLogViewer && (
+                <LogViewerModal
+                  logs={printHistory}
+                  onClose={() => setShowLogViewer(false)}
                 />
               )}
               {showPayeeManager && (
@@ -4256,8 +4470,13 @@
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
-                    {/* History Count Indicator Badge */}
-                    <div className="bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300 flex items-center gap-2">
+                    {/* History Count Indicator Badge: opens the log viewer */}
+                    <button
+                      type="button"
+                      onClick={() => setShowLogViewer(true)}
+                      title="View logs"
+                      className="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300 flex items-center gap-2 cursor-pointer transition"
+                    >
                       <i
                         data-lucide="file-text"
                         className="w-3.5 h-3.5 text-amber-500"
@@ -4266,7 +4485,7 @@
                       <span className="text-amber-400 font-bold">
                         {printHistory.length}
                       </span>
-                    </div>
+                    </button>
 
                     {/* Download Excel Sheet Button */}
                     <button
@@ -4340,6 +4559,7 @@
                         <option value="hdfc">HDFC Bank Ltd</option>
                         <option value="icici">ICICI Bank Ltd</option>
                         <option value="indusind">IndusInd Bank Ltd</option>
+                        <option value="boi">Bank of India</option>
                       </select>
                       <div className="pt-3 border-t border-slate-800 space-y-2">
                         <div className="flex items-center gap-2">
@@ -4510,11 +4730,12 @@
                           onChange={(e) => {
                             setPayeeName(e.target.value);
                             setShowSuggestions(true); // typing opens the popup again
+                            setHasFocus(true);
                           }}
                           onBlur={() => setShowSuggestions(false)} // focus left the input: close it
                           onFocus={() => {
-                            if (!programmaticFocusRef.current)
-                              setShowSuggestions(true);
+                            // if (!programmaticFocusRef.current) // payee suggestions won't open up on preview payee click
+                            setShowSuggestions(true);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === "Escape") {
