@@ -2292,13 +2292,7 @@
         const [namingOpen, setNamingOpen] = useState(false); // inline "name this preset" box
         const [newPresetName, setNewPresetName] = useState("");
         const activePreset = presets.find((p) => p.id === activePresetId);
-        const presetEdited =
-          JSON.stringify(fields) !==
-          JSON.stringify(
-            activePreset
-              ? activePreset.fields
-              : DEFAULT_PRESETS[selectedBank].fields,
-          );
+
         const [showPresetManager, setShowPresetManager] = useState(false);
 
         const [printHistory, setPrintHistory] = useState(
@@ -2372,6 +2366,16 @@
         const [printerCal, setPrinterCal] = useState({ x: 0, y: 0 });
 
         // STATES END HERE --------------------------------------------------------------
+
+        const presetEdited =
+          JSON.stringify(fields) !==
+            JSON.stringify(
+              activePreset
+                ? activePreset.fields
+                : DEFAULT_PRESETS[selectedBank].fields,
+            ) ||
+          (globalOffset.top || 0) !== (activePreset?.globalOffset?.top || 0) ||
+          (globalOffset.left || 0) !== (activePreset?.globalOffset?.left || 0);
 
         // EFFECTS START HERE --------------------------------------------------------------
 
@@ -2906,6 +2910,14 @@
         const applyPreset = (id, bank = selectedBank, list = presets) => {
           const preset = list.find((p) => p.id === id);
           setActivePresetId(preset ? preset.id : null);
+          setGlobalOffset(
+            preset?.globalOffset
+              ? {
+                  top: preset.globalOffset.top || 0,
+                  left: preset.globalOffset.left || 0,
+                }
+              : { top: 0, left: 0 },
+          );
           setFields(
             JSON.parse(
               JSON.stringify(
@@ -2962,6 +2974,7 @@
             id: "p_" + Date.now(),
             name: clean,
             fields: JSON.parse(JSON.stringify(fields)),
+            globalOffset: { top: globalOffset.top, left: globalOffset.left },
           };
           const list = [...presets, newPreset];
           persistPresets(list);
@@ -2987,7 +3000,14 @@
           }
           const list = presets.map((p) =>
             p.id === activePresetId
-              ? { ...p, fields: JSON.parse(JSON.stringify(fields)) }
+              ? {
+                  ...p,
+                  fields: JSON.parse(JSON.stringify(fields)),
+                  globalOffset: {
+                    top: globalOffset.top,
+                    left: globalOffset.left,
+                  },
+                }
               : p,
           );
           persistPresets(list);
